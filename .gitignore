@@ -1,0 +1,7 @@
+terraform-provider-xui
+**/.terraform/
+**/.terraform.lock.hcl
+**/crash.log
+**/terraform.tfvars
+examples/debug/dev.terraform.rc
+examples/debug/terraform.tfvars.local

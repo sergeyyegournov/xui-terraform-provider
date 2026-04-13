@@ -1,0 +1,16 @@
+# Prefer the generated file from this folder:
+#   ./dev-setup.sh
+#   export TF_CLI_CONFIG_FILE="$(pwd)/dev.terraform.rc"
+#
+# Or merge the block below into ~/.terraformrc. Path = directory containing the
+# `terraform-provider-xui` binary (module root after `go build -o terraform-provider-xui .`).
+#
+# Skip `terraform init` for example.com dev_overrides; use validate / plan / apply.
+
+provider_installation {
+  dev_overrides {
+    "example.com/xui/xui" = "/ABSOLUTE/PATH/TO/terraform-provider-xui"
+  }
+
+  direct {}
+}

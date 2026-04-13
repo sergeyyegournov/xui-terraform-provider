@@ -1,0 +1,5 @@
+xui_username         = "your-username"
+xui_password         = "your-password"
+debug_inbound_port   = 24444
+debug_inbound_remark = "terraform-debug-inbound"
+xui_base_url         = "https://panel.example.com/your-random-path/"
