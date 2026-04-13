@@ -5,3 +5,4 @@ terraform-provider-xui
 **/terraform.tfvars
 examples/debug/dev.terraform.rc
 examples/debug/terraform.tfvars.local
+dist/

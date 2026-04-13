@@ -88,6 +88,7 @@ func (p *xuiProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewInboundResource,
 		NewVLESSClientResource,
+		NewXrayTemplateResource,
 	}
 }
 

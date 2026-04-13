@@ -172,6 +172,124 @@ func (c *Client) requestJSON(method, endpoint string, body []byte) (*APIResponse
 	return &msg, nil
 }
 
+func (c *Client) postForm(path []string, payload map[string]string) (*APIResponse, error) {
+	endpoint, err := c.join(path...)
+	if err != nil {
+		return nil, err
+	}
+	form := url.Values{}
+	for k, v := range payload {
+		form.Set(k, v)
+	}
+	return c.requestForm(endpoint, form)
+}
+
+func (c *Client) requestForm(endpoint string, form url.Values) (*APIResponse, error) {
+	if err := c.Login(); err != nil {
+		return nil, err
+	}
+	doOnce := func() ([]byte, int, error) {
+		req, err := http.NewRequest(http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+		if err != nil {
+			return nil, 0, err
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Accept", "application/json")
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return nil, 0, err
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		return b, resp.StatusCode, err
+	}
+	b, status, err := doOnce()
+	if err != nil {
+		return nil, err
+	}
+	if status == http.StatusNotFound {
+		if err := c.Login(); err != nil {
+			return nil, err
+		}
+		b, _, err = doOnce()
+		if err != nil {
+			return nil, err
+		}
+	}
+	var msg APIResponse
+	if err := json.Unmarshal(b, &msg); err != nil {
+		return nil, fmt.Errorf("POST %s: %w; body=%s", endpoint, err, truncate(b, 512))
+	}
+	if !msg.Success {
+		return nil, fmt.Errorf("POST %s: %s", endpoint, msg.Msg)
+	}
+	return &msg, nil
+}
+
+func toJSONString(v any) (string, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", err
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, b); err != nil {
+		return "", err
+	}
+	return compact.String(), nil
+}
+
+// GetXrayTemplate returns current Xray template JSON from /panel/xray/.
+func (c *Client) GetXrayTemplate() (string, error) {
+	msg, err := c.postJSON([]string{"panel", "xray"}, map[string]any{})
+	if err != nil {
+		return "", err
+	}
+	var objString string
+	if err := json.Unmarshal(msg.Obj, &objString); err == nil {
+		var wrap map[string]any
+		if err := json.Unmarshal([]byte(objString), &wrap); err != nil {
+			return "", fmt.Errorf("decode /panel/xray payload: %w", err)
+		}
+		if x, ok := wrap["xraySetting"]; ok {
+			return toJSONString(x)
+		}
+		return "", fmt.Errorf("decode /panel/xray payload: xraySetting missing")
+	}
+	var wrap map[string]any
+	if err := json.Unmarshal(msg.Obj, &wrap); err != nil {
+		return "", fmt.Errorf("decode /panel/xray payload: %w", err)
+	}
+	x, ok := wrap["xraySetting"]
+	if !ok {
+		return "", fmt.Errorf("decode /panel/xray payload: xraySetting missing")
+	}
+	return toJSONString(x)
+}
+
+// UpdateXrayTemplate saves Xray template JSON via /panel/xray/update.
+func (c *Client) UpdateXrayTemplate(templateJSON string) error {
+	_, err := c.postForm([]string{"panel", "xray", "update"}, map[string]string{
+		"xraySetting": templateJSON,
+	})
+	return err
+}
+
+// RestartXrayService triggers /panel/api/server/restartXrayService.
+func (c *Client) RestartXrayService() error {
+	_, err := c.postForm([]string{"panel", "api", "server", "restartXrayService"}, map[string]string{})
+	if err == nil {
+		return nil
+	}
+	_, ctErr := c.postJSON([]string{"panel", "api", "server", "restartXrayService"}, map[string]any{})
+	if ctErr == nil {
+		return nil
+	}
+	if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "405") || strings.Contains(err.Error(), "415") {
+		return ctErr
+	}
+	return err
+}
+
 // ListInbounds returns raw obj JSON (array of inbounds).
 func (c *Client) ListInbounds() (json.RawMessage, error) {
 	msg, err := c.get([]string{"panel", "api", "inbounds", "list"})
