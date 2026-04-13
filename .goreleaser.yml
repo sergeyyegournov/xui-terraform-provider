@@ -44,7 +44,7 @@ signs:
       - "--local-user"
       - "{{ .Env.GPG_FINGERPRINT }}"
       - "--detach-sign"
-      - "--armor"
+      # Binary detached signature (no --armor). Terraform Registry rejects armored .sig files.
       - "--output"
       - "${signature}"
       - "${artifact}"
