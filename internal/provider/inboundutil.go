@@ -99,7 +99,8 @@ func mergeInboundSettingsPreservingClients(serverJSON, userJSON string) (string,
 	} else {
 		delete(server, "clients")
 	}
-	out, err := json.MarshalIndent(server, "", "  ")
+	// Keep settings JSON compact to avoid string-format drift between plan/apply/read.
+	out, err := json.Marshal(server)
 	if err != nil {
 		return "", err
 	}
