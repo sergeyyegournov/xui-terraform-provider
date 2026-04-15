@@ -33,7 +33,7 @@ This repository uses GoReleaser + GitHub Actions to publish provider binaries an
 3. GitHub Action `release` runs automatically and creates a GitHub release with:
    - platform ZIP archives
    - `terraform-provider-xui_<version>_SHA256SUMS`
-   - `terraform-provider-xui_<version>_SHA256SUMS.sig`
+   - `terraform-provider-xui_<version>_SHA256SUMS.sig` (binary detached GPG signature)
 
 ## Local dry-run (optional)
 
