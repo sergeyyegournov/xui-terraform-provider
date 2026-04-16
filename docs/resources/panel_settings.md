@@ -94,3 +94,14 @@ resource "xui_panel_settings" "this" {
 ### Read-Only
 
 - `id` (String) Static resource id (`panel-settings`).
+
+## Import
+
+Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+# The import ID can be anything (it's a singleton resource); "panel-settings" is conventional.
+terraform import xui_panel_settings.this panel-settings
+```

@@ -17,6 +17,7 @@ import (
 )
 
 var _ resource.Resource = (*panelSettingsResource)(nil)
+var _ resource.ResourceWithImportState = (*panelSettingsResource)(nil)
 
 type panelSettingsResource struct {
 	client *xui.Client
@@ -603,4 +604,17 @@ func (r *panelSettingsResource) Update(ctx context.Context, req resource.UpdateR
 
 func (r *panelSettingsResource) Delete(_ context.Context, _ resource.DeleteRequest, _ *resource.DeleteResponse) {
 	// Panel settings cannot be deleted; removing from state is sufficient.
+}
+
+func (r *panelSettingsResource) ImportState(ctx context.Context, _ resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	m, err := r.client.GetPanelSettings()
+	if err != nil {
+		resp.Diagnostics.AddError("API error", err.Error())
+		return
+	}
+	var state panelSettingsModel
+	state.ID = types.StringValue("panel-settings")
+	state.RestartPanel = types.BoolValue(false)
+	r.apiToModel(m, &state)
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
