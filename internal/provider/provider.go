@@ -30,7 +30,7 @@ func (p *xuiProvider) Metadata(_ context.Context, _ provider.MetadataRequest, re
 
 func (p *xuiProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Manage [3x-ui](https://github.com/MHSanaei/3x-ui/) (Xray panel) inbounds (`xui_inbound`) and per-protocol clients (e.g. `xui_vless_client`) via the panel HTTP API and session cookies.",
+		MarkdownDescription: "Manage [3x-ui](https://github.com/MHSanaei/3x-ui/) (Xray panel) resources — inbounds, clients, Xray template, and panel settings — via the panel HTTP API and session cookies.",
 		Attributes: map[string]schema.Attribute{
 			"base_url": schema.StringAttribute{
 				MarkdownDescription: "Panel root URL including random path prefix, e.g. `https://host:port/<uuid>/`.",
@@ -89,6 +89,7 @@ func (p *xuiProvider) Resources(_ context.Context) []func() resource.Resource {
 		NewInboundResource,
 		NewVLESSClientResource,
 		NewXrayTemplateResource,
+		NewPanelSettingsResource,
 	}
 }
 

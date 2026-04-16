@@ -353,3 +353,28 @@ func (c *Client) DeleteInboundClient(inboundID int, clientID string) error {
 	_, err := c.postJSON([]string{"panel", "api", "inbounds", fmt.Sprintf("%d", inboundID), "delClient", clientID}, map[string]any{})
 	return err
 }
+
+// GetPanelSettings returns all panel settings as a JSON map.
+func (c *Client) GetPanelSettings() (map[string]any, error) {
+	msg, err := c.postJSON([]string{"panel", "setting", "all"}, map[string]any{})
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(msg.Obj, &m); err != nil {
+		return nil, fmt.Errorf("decode panel settings: %w", err)
+	}
+	return m, nil
+}
+
+// UpdatePanelSettings sends the full settings object to /panel/setting/update.
+func (c *Client) UpdatePanelSettings(settings map[string]any) error {
+	_, err := c.postJSON([]string{"panel", "setting", "update"}, settings)
+	return err
+}
+
+// RestartPanel triggers /panel/setting/restartPanel.
+func (c *Client) RestartPanel() error {
+	_, err := c.postJSON([]string{"panel", "setting", "restartPanel"}, map[string]any{})
+	return err
+}
