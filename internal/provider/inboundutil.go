@@ -1,8 +1,11 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 )
 
 func inboundMapFromJSON(raw []byte) (map[string]any, error) {
@@ -145,4 +148,49 @@ func findVLESSClientByEmail(settingsJSON, email string) (map[string]any, error) 
 func clientUUID(cm map[string]any) string {
 	id, _ := cm["id"].(string)
 	return id
+}
+
+// settingsIgnoreClientsPlanModifier suppresses diffs on the "settings"
+// attribute when the only change is the "clients" array (managed by
+// xui_vless_client). It compares config vs state after stripping "clients"
+// from both; if the remaining keys are equal it keeps the state value.
+type settingsIgnoreClientsPlanModifier struct{}
+
+func (m settingsIgnoreClientsPlanModifier) Description(_ context.Context) string {
+	return "Ignores the clients array inside settings JSON so clients can be managed separately."
+}
+
+func (m settingsIgnoreClientsPlanModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m settingsIgnoreClientsPlanModifier) PlanModifyString(_ context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+	if req.StateValue.IsNull() || req.PlanValue.IsNull() || req.PlanValue.IsUnknown() {
+		return
+	}
+	planJSON := compactJSON(req.PlanValue.ValueString())
+	stateJSON := req.StateValue.ValueString()
+
+	if stripClients(planJSON) == stripClients(stateJSON) {
+		resp.PlanValue = req.StateValue
+	}
+}
+
+// stripClients removes the "clients" key from a JSON object string and
+// returns the compact remainder for comparison purposes.
+func stripClients(s string) string {
+	var m map[string]any
+	if err := json.Unmarshal([]byte(s), &m); err != nil {
+		return s
+	}
+	delete(m, "clients")
+	out, err := json.Marshal(m)
+	if err != nil {
+		return s
+	}
+	return string(out)
+}
+
+func settingsIgnoreClients() planmodifier.String {
+	return settingsIgnoreClientsPlanModifier{}
 }

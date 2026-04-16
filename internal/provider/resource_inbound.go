@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/syegournov/xkeen-gen/terraform-provider-xui/internal/xui"
@@ -93,6 +94,9 @@ func (r *inboundResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			"settings": schema.StringAttribute{
 				MarkdownDescription: "Protocol-specific `settings` JSON string, same as export `settings` (panel stores escaped JSON; in Terraform use `jsonencode()` on an object). On **create**, use the full object from an export or a minimal valid shape for your protocol. On **update**, keys other than `clients` are applied; `clients` always come from the server.",
 				Required:            true,
+				PlanModifiers: []planmodifier.String{
+					settingsIgnoreClients(),
+				},
 			},
 			"stream_settings": schema.StringAttribute{
 				MarkdownDescription: "`streamSettings` JSON string from export (transport + TLS/REALITY). See Xray [StreamSettingsObject](https://xtls.github.io/config/inbounds.html#streamsettingsobject).",
@@ -107,6 +111,9 @@ func (r *inboundResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			"tag": schema.StringAttribute{
 				MarkdownDescription: "Inbound tag assigned by the panel (e.g. `inbound-443`). Read-only.",
 				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
