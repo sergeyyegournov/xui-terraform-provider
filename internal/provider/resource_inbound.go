@@ -234,9 +234,9 @@ func (r *inboundResource) Read(ctx context.Context, req resource.ReadRequest, re
 	state.ExpiryTime = types.Int64Value(int64(exp))
 	state.TrafficReset = types.StringValue(stringFromMap(m, "trafficReset"))
 	state.Total = types.Int64Value(int64FromMap(m, "total"))
-	state.Settings = types.StringValue(stringFromMap(m, "settings"))
-	state.StreamSettings = types.StringValue(stringFromMap(m, "streamSettings"))
-	state.Sniffing = types.StringValue(stringFromMap(m, "sniffing"))
+	state.Settings = types.StringValue(compactJSON(stringFromMap(m, "settings")))
+	state.StreamSettings = types.StringValue(compactJSON(stringFromMap(m, "streamSettings")))
+	state.Sniffing = types.StringValue(compactJSON(stringFromMap(m, "sniffing")))
 	state.Tag = types.StringValue(stringFromMap(m, "tag"))
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
@@ -311,7 +311,7 @@ func (r *inboundResource) Update(ctx context.Context, req resource.UpdateRequest
 	if rawAfter, err := r.client.GetInbound(int(state.ID.ValueInt64())); err == nil {
 		if m, err := inboundMapFromJSON(rawAfter); err == nil {
 			state.Tag = types.StringValue(stringFromMap(m, "tag"))
-			state.Settings = types.StringValue(stringFromMap(m, "settings"))
+			state.Settings = types.StringValue(compactJSON(stringFromMap(m, "settings")))
 		}
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)

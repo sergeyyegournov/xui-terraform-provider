@@ -39,6 +39,20 @@ func stringFromMap(m map[string]any, key string) string {
 	return s
 }
 
+// compactJSON re-encodes a JSON string into compact form so that
+// semantically identical objects always produce the same string.
+func compactJSON(s string) string {
+	var v any
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		return s
+	}
+	out, err := json.Marshal(v)
+	if err != nil {
+		return s
+	}
+	return string(out)
+}
+
 func int64FromMap(m map[string]any, key string) int64 {
 	v, ok := m[key]
 	if !ok || v == nil {
