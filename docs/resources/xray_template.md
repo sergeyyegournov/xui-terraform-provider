@@ -96,3 +96,14 @@ resource "xui_xray_template" "example" {
 ### Read-Only
 
 - `id` (String) Static resource id (`xray-template`).
+
+## Import
+
+Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+# Import ID is ignored (singleton); "xray-template" is conventional.
+terraform import xui_xray_template.this xray-template
+```

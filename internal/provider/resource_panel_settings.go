@@ -33,7 +33,7 @@ func (r *panelSettingsResource) Metadata(_ context.Context, _ resource.MetadataR
 
 func (r *panelSettingsResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Manages 3x-ui panel settings (`/panel/setting/update`). This is a singleton resource — only one instance should exist per panel. All attributes are optional and default to the panel's built-in defaults. Set `restart_panel` to true if you want to restart the panel after applying changes (required for web listen/port/cert changes to take effect).",
+		MarkdownDescription: "Manages 3x-ui panel settings (`/panel/setting/update`). This is a singleton resource — only one instance should exist per panel. All attributes are optional and default to the panel's built-in defaults. Set `restart_panel` to true if you want to restart the panel after applying changes (required for web listen/port/cert changes to take effect). LDAP and two-factor fields mirror the panel's `AllSetting` model.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
@@ -188,6 +188,142 @@ func (r *panelSettingsResource) Schema(_ context.Context, _ resource.SchemaReque
 				Optional:            true,
 				Computed:            true,
 				Default:             stringdefault.StaticString("UTC"),
+			},
+			"two_factor_enable": schema.BoolAttribute{
+				MarkdownDescription: "Enable two-factor authentication for the panel.",
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(false),
+			},
+			"two_factor_token": schema.StringAttribute{
+				MarkdownDescription: "Two-factor authentication secret / token.",
+				Optional:            true,
+				Computed:            true,
+				Sensitive:           true,
+				Default:             stringdefault.StaticString(""),
+			},
+
+			// LDAP
+			"ldap_enable": schema.BoolAttribute{
+				MarkdownDescription: "Enable LDAP authentication.",
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(false),
+			},
+			"ldap_host": schema.StringAttribute{
+				MarkdownDescription: "LDAP server host.",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
+			},
+			"ldap_port": schema.Int64Attribute{
+				MarkdownDescription: "LDAP server port.",
+				Optional:            true,
+				Computed:            true,
+				Default:             int64default.StaticInt64(389),
+			},
+			"ldap_use_tls": schema.BoolAttribute{
+				MarkdownDescription: "Use TLS for LDAP connections.",
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(false),
+			},
+			"ldap_bind_dn": schema.StringAttribute{
+				MarkdownDescription: "LDAP bind DN.",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
+			},
+			"ldap_password": schema.StringAttribute{
+				MarkdownDescription: "LDAP bind password.",
+				Optional:            true,
+				Computed:            true,
+				Sensitive:           true,
+				Default:             stringdefault.StaticString(""),
+			},
+			"ldap_base_dn": schema.StringAttribute{
+				MarkdownDescription: "LDAP base DN for searches.",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
+			},
+			"ldap_user_filter": schema.StringAttribute{
+				MarkdownDescription: "LDAP user search filter.",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
+			},
+			"ldap_user_attr": schema.StringAttribute{
+				MarkdownDescription: "LDAP attribute for username (e.g. `mail` or `uid`).",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
+			},
+			"ldap_vless_field": schema.StringAttribute{
+				MarkdownDescription: "LDAP attribute mapped to VLESS identity.",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
+			},
+			"ldap_sync_cron": schema.StringAttribute{
+				MarkdownDescription: "Cron schedule for LDAP sync.",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
+			},
+			"ldap_flag_field": schema.StringAttribute{
+				MarkdownDescription: "LDAP attribute used as a generic flag.",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
+			},
+			"ldap_truthy_values": schema.StringAttribute{
+				MarkdownDescription: "Comma-separated values treated as true for the flag field.",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
+			},
+			"ldap_invert_flag": schema.BoolAttribute{
+				MarkdownDescription: "Invert LDAP flag interpretation.",
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(false),
+			},
+			"ldap_inbound_tags": schema.StringAttribute{
+				MarkdownDescription: "Inbound tags for LDAP-provisioned users.",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
+			},
+			"ldap_auto_create": schema.BoolAttribute{
+				MarkdownDescription: "Automatically create clients from LDAP.",
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(false),
+			},
+			"ldap_auto_delete": schema.BoolAttribute{
+				MarkdownDescription: "Automatically delete clients removed from LDAP.",
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(false),
+			},
+			"ldap_default_total_gb": schema.Int64Attribute{
+				MarkdownDescription: "Default traffic limit in GB for LDAP-created clients (0 = unlimited).",
+				Optional:            true,
+				Computed:            true,
+				Default:             int64default.StaticInt64(0),
+			},
+			"ldap_default_expiry_days": schema.Int64Attribute{
+				MarkdownDescription: "Default account expiry in days for LDAP-created clients (0 = never).",
+				Optional:            true,
+				Computed:            true,
+				Default:             int64default.StaticInt64(0),
+			},
+			"ldap_default_limit_ip": schema.Int64Attribute{
+				MarkdownDescription: "Default IP limit for LDAP-created clients.",
+				Optional:            true,
+				Computed:            true,
+				Default:             int64default.StaticInt64(0),
 			},
 
 			// Subscription server
@@ -403,7 +539,29 @@ type panelSettingsModel struct {
 	TgLang           types.String `tfsdk:"tg_lang"`
 
 	// Security
-	TimeLocation types.String `tfsdk:"time_location"`
+	TimeLocation          types.String `tfsdk:"time_location"`
+	TwoFactorEnable       types.Bool   `tfsdk:"two_factor_enable"`
+	TwoFactorToken        types.String `tfsdk:"two_factor_token"`
+	LdapEnable            types.Bool   `tfsdk:"ldap_enable"`
+	LdapHost              types.String `tfsdk:"ldap_host"`
+	LdapPort              types.Int64  `tfsdk:"ldap_port"`
+	LdapUseTLS            types.Bool   `tfsdk:"ldap_use_tls"`
+	LdapBindDN            types.String `tfsdk:"ldap_bind_dn"`
+	LdapPassword          types.String `tfsdk:"ldap_password"`
+	LdapBaseDN            types.String `tfsdk:"ldap_base_dn"`
+	LdapUserFilter        types.String `tfsdk:"ldap_user_filter"`
+	LdapUserAttr          types.String `tfsdk:"ldap_user_attr"`
+	LdapVlessField        types.String `tfsdk:"ldap_vless_field"`
+	LdapSyncCron          types.String `tfsdk:"ldap_sync_cron"`
+	LdapFlagField         types.String `tfsdk:"ldap_flag_field"`
+	LdapTruthyValues      types.String `tfsdk:"ldap_truthy_values"`
+	LdapInvertFlag        types.Bool   `tfsdk:"ldap_invert_flag"`
+	LdapInboundTags       types.String `tfsdk:"ldap_inbound_tags"`
+	LdapAutoCreate        types.Bool   `tfsdk:"ldap_auto_create"`
+	LdapAutoDelete        types.Bool   `tfsdk:"ldap_auto_delete"`
+	LdapDefaultTotalGB    types.Int64  `tfsdk:"ldap_default_total_gb"`
+	LdapDefaultExpiryDays types.Int64  `tfsdk:"ldap_default_expiry_days"`
+	LdapDefaultLimitIP    types.Int64  `tfsdk:"ldap_default_limit_ip"`
 
 	// Subscription
 	SubEnable                   types.Bool   `tfsdk:"sub_enable"`
@@ -462,6 +620,28 @@ func (r *panelSettingsResource) modelToPayload(m *panelSettingsModel) map[string
 		"tgCpu":                       m.TgCPU.ValueInt64(),
 		"tgLang":                      m.TgLang.ValueString(),
 		"timeLocation":                m.TimeLocation.ValueString(),
+		"twoFactorEnable":             m.TwoFactorEnable.ValueBool(),
+		"twoFactorToken":              m.TwoFactorToken.ValueString(),
+		"ldapEnable":                  m.LdapEnable.ValueBool(),
+		"ldapHost":                    m.LdapHost.ValueString(),
+		"ldapPort":                    m.LdapPort.ValueInt64(),
+		"ldapUseTLS":                  m.LdapUseTLS.ValueBool(),
+		"ldapBindDN":                  m.LdapBindDN.ValueString(),
+		"ldapPassword":                m.LdapPassword.ValueString(),
+		"ldapBaseDN":                  m.LdapBaseDN.ValueString(),
+		"ldapUserFilter":              m.LdapUserFilter.ValueString(),
+		"ldapUserAttr":                m.LdapUserAttr.ValueString(),
+		"ldapVlessField":              m.LdapVlessField.ValueString(),
+		"ldapSyncCron":                m.LdapSyncCron.ValueString(),
+		"ldapFlagField":               m.LdapFlagField.ValueString(),
+		"ldapTruthyValues":            m.LdapTruthyValues.ValueString(),
+		"ldapInvertFlag":              m.LdapInvertFlag.ValueBool(),
+		"ldapInboundTags":             m.LdapInboundTags.ValueString(),
+		"ldapAutoCreate":              m.LdapAutoCreate.ValueBool(),
+		"ldapAutoDelete":              m.LdapAutoDelete.ValueBool(),
+		"ldapDefaultTotalGB":          m.LdapDefaultTotalGB.ValueInt64(),
+		"ldapDefaultExpiryDays":       m.LdapDefaultExpiryDays.ValueInt64(),
+		"ldapDefaultLimitIP":          m.LdapDefaultLimitIP.ValueInt64(),
 		"subEnable":                   m.SubEnable.ValueBool(),
 		"subJsonEnable":               m.SubJSONEnable.ValueBool(),
 		"subTitle":                    m.SubTitle.ValueString(),
@@ -516,6 +696,28 @@ func (r *panelSettingsResource) apiToModel(m map[string]any, state *panelSetting
 	state.TgCPU = types.Int64Value(int64FromMap(m, "tgCpu"))
 	state.TgLang = types.StringValue(stringFromMap(m, "tgLang"))
 	state.TimeLocation = types.StringValue(stringFromMap(m, "timeLocation"))
+	state.TwoFactorEnable = types.BoolValue(boolFromMap(m, "twoFactorEnable"))
+	state.TwoFactorToken = types.StringValue(stringFromMap(m, "twoFactorToken"))
+	state.LdapEnable = types.BoolValue(boolFromMap(m, "ldapEnable"))
+	state.LdapHost = types.StringValue(stringFromMap(m, "ldapHost"))
+	state.LdapPort = types.Int64Value(int64FromMap(m, "ldapPort"))
+	state.LdapUseTLS = types.BoolValue(boolFromMap(m, "ldapUseTLS"))
+	state.LdapBindDN = types.StringValue(stringFromMap(m, "ldapBindDN"))
+	state.LdapPassword = types.StringValue(stringFromMap(m, "ldapPassword"))
+	state.LdapBaseDN = types.StringValue(stringFromMap(m, "ldapBaseDN"))
+	state.LdapUserFilter = types.StringValue(stringFromMap(m, "ldapUserFilter"))
+	state.LdapUserAttr = types.StringValue(stringFromMap(m, "ldapUserAttr"))
+	state.LdapVlessField = types.StringValue(stringFromMap(m, "ldapVlessField"))
+	state.LdapSyncCron = types.StringValue(stringFromMap(m, "ldapSyncCron"))
+	state.LdapFlagField = types.StringValue(stringFromMap(m, "ldapFlagField"))
+	state.LdapTruthyValues = types.StringValue(stringFromMap(m, "ldapTruthyValues"))
+	state.LdapInvertFlag = types.BoolValue(boolFromMap(m, "ldapInvertFlag"))
+	state.LdapInboundTags = types.StringValue(stringFromMap(m, "ldapInboundTags"))
+	state.LdapAutoCreate = types.BoolValue(boolFromMap(m, "ldapAutoCreate"))
+	state.LdapAutoDelete = types.BoolValue(boolFromMap(m, "ldapAutoDelete"))
+	state.LdapDefaultTotalGB = types.Int64Value(int64FromMap(m, "ldapDefaultTotalGB"))
+	state.LdapDefaultExpiryDays = types.Int64Value(int64FromMap(m, "ldapDefaultExpiryDays"))
+	state.LdapDefaultLimitIP = types.Int64Value(int64FromMap(m, "ldapDefaultLimitIP"))
 	state.SubEnable = types.BoolValue(boolFromMap(m, "subEnable"))
 	state.SubJSONEnable = types.BoolValue(boolFromMap(m, "subJsonEnable"))
 	state.SubTitle = types.StringValue(stringFromMap(m, "subTitle"))

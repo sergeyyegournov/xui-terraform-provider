@@ -14,6 +14,7 @@ import (
 )
 
 var _ resource.Resource = (*xrayTemplateResource)(nil)
+var _ resource.ResourceWithImportState = (*xrayTemplateResource)(nil)
 
 type xrayTemplateResource struct {
 	client *xui.Client
@@ -138,4 +139,22 @@ func (r *xrayTemplateResource) Update(ctx context.Context, req resource.UpdateRe
 
 func (r *xrayTemplateResource) Delete(_ context.Context, _ resource.DeleteRequest, _ *resource.DeleteResponse) {
 	// No delete endpoint on 3x-ui side; Terraform state removal is sufficient.
+}
+
+func (r *xrayTemplateResource) ImportState(ctx context.Context, _ resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	raw, err := r.client.GetXrayTemplate()
+	if err != nil {
+		resp.Diagnostics.AddError("API error", err.Error())
+		return
+	}
+	if err := validateJSONString(raw, "json"); err != nil {
+		resp.Diagnostics.AddError("Invalid json", err.Error())
+		return
+	}
+	state := xrayTemplateModel{
+		ID:          types.StringValue("xray-template"),
+		JSON:        types.StringValue(raw),
+		RestartXray: types.BoolValue(false),
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

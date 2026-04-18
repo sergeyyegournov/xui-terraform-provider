@@ -3,12 +3,12 @@
 page_title: "xui_panel_settings Resource - xui"
 subcategory: ""
 description: |-
-  Manages 3x-ui panel settings (/panel/setting/update). This is a singleton resource — only one instance should exist per panel. All attributes are optional and default to the panel's built-in defaults. Set restart_panel to true if you want to restart the panel after applying changes (required for web listen/port/cert changes to take effect).
+  Manages 3x-ui panel settings (/panel/setting/update). This is a singleton resource — only one instance should exist per panel. All attributes are optional and default to the panel's built-in defaults. Set restart_panel to true if you want to restart the panel after applying changes (required for web listen/port/cert changes to take effect). LDAP and two-factor fields mirror the panel's AllSetting model.
 ---
 
 # xui_panel_settings (Resource)
 
-Manages 3x-ui panel settings (`/panel/setting/update`). This is a singleton resource — only one instance should exist per panel. All attributes are optional and default to the panel's built-in defaults. Set `restart_panel` to true if you want to restart the panel after applying changes (required for web listen/port/cert changes to take effect).
+Manages 3x-ui panel settings (`/panel/setting/update`). This is a singleton resource — only one instance should exist per panel. All attributes are optional and default to the panel's built-in defaults. Set `restart_panel` to true if you want to restart the panel after applying changes (required for web listen/port/cert changes to take effect). LDAP and two-factor fields mirror the panel's `AllSetting` model.
 
 ## Example Usage
 
@@ -44,6 +44,26 @@ resource "xui_panel_settings" "this" {
 - `expire_diff` (Number) Expiration warning threshold in days.
 - `external_traffic_inform_enable` (Boolean) Enable external traffic reporting.
 - `external_traffic_inform_uri` (String) URI for external traffic reporting.
+- `ldap_auto_create` (Boolean) Automatically create clients from LDAP.
+- `ldap_auto_delete` (Boolean) Automatically delete clients removed from LDAP.
+- `ldap_base_dn` (String) LDAP base DN for searches.
+- `ldap_bind_dn` (String) LDAP bind DN.
+- `ldap_default_expiry_days` (Number) Default account expiry in days for LDAP-created clients (0 = never).
+- `ldap_default_limit_ip` (Number) Default IP limit for LDAP-created clients.
+- `ldap_default_total_gb` (Number) Default traffic limit in GB for LDAP-created clients (0 = unlimited).
+- `ldap_enable` (Boolean) Enable LDAP authentication.
+- `ldap_flag_field` (String) LDAP attribute used as a generic flag.
+- `ldap_host` (String) LDAP server host.
+- `ldap_inbound_tags` (String) Inbound tags for LDAP-provisioned users.
+- `ldap_invert_flag` (Boolean) Invert LDAP flag interpretation.
+- `ldap_password` (String, Sensitive) LDAP bind password.
+- `ldap_port` (Number) LDAP server port.
+- `ldap_sync_cron` (String) Cron schedule for LDAP sync.
+- `ldap_truthy_values` (String) Comma-separated values treated as true for the flag field.
+- `ldap_use_tls` (Boolean) Use TLS for LDAP connections.
+- `ldap_user_attr` (String) LDAP attribute for username (e.g. `mail` or `uid`).
+- `ldap_user_filter` (String) LDAP user search filter.
+- `ldap_vless_field` (String) LDAP attribute mapped to VLESS identity.
 - `page_size` (Number) Number of items per page in lists.
 - `remark_model` (String) Remark model pattern for inbounds.
 - `restart_panel` (Boolean) If true, restart the panel after applying changes. Required for web listen/port/cert changes to take effect.
@@ -84,6 +104,8 @@ resource "xui_panel_settings" "this" {
 - `tg_run_time` (String) Cron schedule for Telegram notifications (e.g. `@daily`).
 - `time_location` (String) Time zone location (e.g. `UTC`, `Asia/Tehran`).
 - `traffic_diff` (Number) Traffic warning threshold percentage.
+- `two_factor_enable` (Boolean) Enable two-factor authentication for the panel.
+- `two_factor_token` (String, Sensitive) Two-factor authentication secret / token.
 - `web_base_path` (String) Base path for panel URLs (e.g. `/<uuid>/`).
 - `web_cert_file` (String) Path to SSL certificate file for the web panel.
 - `web_domain` (String) Web panel domain for validation.
