@@ -3,8 +3,10 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -164,8 +166,24 @@ func (r *vlessClientResource) Create(ctx context.Context, req resource.CreateReq
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	plan.ID = types.StringValue(uid)
-	plan.UUID = types.StringValue(uid)
+	cm, err := r.waitForVLESSClient(plan.InboundID.ValueInt64(), plan.Email.ValueString(), 5, 300*time.Millisecond)
+	if err != nil {
+		if fbErr := r.upsertVLESSClientViaInboundUpdate(plan.InboundID.ValueInt64(), clientObj); fbErr != nil {
+			resp.Diagnostics.AddError("API error", fmt.Sprintf("addClient returned success but client was not created (%v); fallback update failed: %v", err, fbErr))
+			return
+		}
+		cm, err = r.waitForVLESSClient(plan.InboundID.ValueInt64(), plan.Email.ValueString(), 5, 300*time.Millisecond)
+		if err != nil {
+			resp.Diagnostics.AddError("API error", fmt.Sprintf("client still missing after fallback update: %v", err))
+			return
+		}
+	}
+	createdUUID := clientUUID(cm)
+	if createdUUID == "" {
+		createdUUID = uid
+	}
+	plan.ID = types.StringValue(createdUUID)
+	plan.UUID = types.StringValue(createdUUID)
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
@@ -285,6 +303,16 @@ func (r *vlessClientResource) Update(ctx context.Context, req resource.UpdateReq
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
+	if _, err := r.waitForVLESSClient(plan.InboundID.ValueInt64(), state.Email.ValueString(), 5, 300*time.Millisecond); err != nil {
+		if fbErr := r.upsertVLESSClientViaInboundUpdate(plan.InboundID.ValueInt64(), clientObj); fbErr != nil {
+			resp.Diagnostics.AddError("API error", fmt.Sprintf("updateClient returned success but client was not found after update (%v); fallback update failed: %v", err, fbErr))
+			return
+		}
+		if _, err := r.waitForVLESSClient(plan.InboundID.ValueInt64(), state.Email.ValueString(), 5, 300*time.Millisecond); err != nil {
+			resp.Diagnostics.AddError("API error", fmt.Sprintf("client still missing after fallback update: %v", err))
+			return
+		}
+	}
 	state.Flow = plan.Flow
 	state.Enable = plan.Enable
 	state.LimitIP = plan.LimitIP
@@ -330,4 +358,98 @@ func (r *vlessClientResource) ImportState(ctx context.Context, req resource.Impo
 
 func parseInt64Trim(s string) (int64, error) {
 	return strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+}
+
+func (r *vlessClientResource) waitForVLESSClient(inboundID int64, email string, attempts int, delay time.Duration) (map[string]any, error) {
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		raw, err := r.client.GetInbound(int(inboundID))
+		if err != nil {
+			lastErr = err
+		} else {
+			m, err := inboundMapFromJSON(raw)
+			if err != nil {
+				lastErr = err
+			} else {
+				cm, err := findVLESSClientByEmail(stringFromMap(m, "settings"), email)
+				if err == nil {
+					return cm, nil
+				}
+				lastErr = err
+			}
+		}
+		if i < attempts-1 {
+			time.Sleep(delay)
+		}
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("client with email %q not found", email)
+	}
+	return nil, lastErr
+}
+
+func (r *vlessClientResource) upsertVLESSClientViaInboundUpdate(inboundID int64, clientObj map[string]any) error {
+	raw, err := r.client.GetInbound(int(inboundID))
+	if err != nil {
+		return err
+	}
+	inbound, err := inboundMapFromJSON(raw)
+	if err != nil {
+		return err
+	}
+	var settings map[string]any
+	if err := json.Unmarshal([]byte(stringFromMap(inbound, "settings")), &settings); err != nil {
+		return fmt.Errorf("parse inbound settings: %w", err)
+	}
+	if settings == nil {
+		settings = map[string]any{}
+	}
+	email, _ := clientObj["email"].(string)
+	clients, _ := settings["clients"].([]any)
+	if clients == nil {
+		clients = []any{}
+	}
+	replaced := false
+	for i, c := range clients {
+		cm, ok := c.(map[string]any)
+		if !ok {
+			continue
+		}
+		if em, _ := cm["email"].(string); em == email {
+			clients[i] = clientObj
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		clients = append(clients, clientObj)
+	}
+	settings["clients"] = clients
+	settingsRaw, err := json.Marshal(settings)
+	if err != nil {
+		return err
+	}
+	port, err := intFromMap(inbound, "port")
+	if err != nil {
+		return err
+	}
+	payload := map[string]any{
+		"id":             int(inboundID),
+		"remark":         stringFromMap(inbound, "remark"),
+		"listen":         stringFromMap(inbound, "listen"),
+		"port":           port,
+		"protocol":       stringFromMap(inbound, "protocol"),
+		"settings":       string(settingsRaw),
+		"streamSettings": stringFromMap(inbound, "streamSettings"),
+		"sniffing":       stringFromMap(inbound, "sniffing"),
+		"enable":         boolFromMap(inbound, "enable"),
+		"expiryTime":     int64FromMap(inbound, "expiryTime"),
+		"trafficReset":   stringFromMap(inbound, "trafficReset"),
+		"total":          int64FromMap(inbound, "total"),
+		"up":             int64FromMap(inbound, "up"),
+		"down":           int64FromMap(inbound, "down"),
+		"allTime":        int64FromMap(inbound, "allTime"),
+	}
+	_, err = r.client.UpdateInbound(int(inboundID), payload)
+	return err
 }
