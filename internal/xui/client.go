@@ -157,17 +157,10 @@ func (c *Client) requestJSON(method, endpoint string, body []byte) (*APIResponse
 		if err := c.Login(); err != nil {
 			return nil, err
 		}
-		b, status, err = doOnce()
+		b, _, err = doOnce()
 		if err != nil {
 			return nil, err
 		}
-	}
-	if status < http.StatusOK || status >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("%s %s: unexpected status %d; body=%s", method, endpoint, status, truncate(b, 512))
-	}
-	if len(bytes.TrimSpace(b)) == 0 {
-		// Some 3x-ui endpoints may return 2xx with an empty body.
-		return &APIResponse{Success: true}, nil
 	}
 	var msg APIResponse
 	if err := json.Unmarshal(b, &msg); err != nil {
