@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
+	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 )
+
+const inboundDummyClientEmail = "__xui_tf_do_not_delete__"
 
 func inboundMapFromJSON(raw []byte) (map[string]any, error) {
 	var m map[string]any
@@ -193,4 +197,93 @@ func stripClients(s string) string {
 
 func settingsIgnoreClients() planmodifier.String {
 	return settingsIgnoreClientsPlanModifier{}
+}
+
+// ensureDummyInboundClient makes sure inbound settings always contain a reserved
+// sentinel client required by buggy panel APIs that reject empty client lists.
+// It keeps existing sentinel UUID when present; otherwise it reuses providedUUID
+// (if valid) or generates a fresh UUID.
+func ensureDummyInboundClient(settingsJSON, providedUUID string) (string, string, error) {
+	var settings map[string]any
+	if err := json.Unmarshal([]byte(settingsJSON), &settings); err != nil {
+		return "", "", fmt.Errorf("parse settings: %w", err)
+	}
+	if settings == nil {
+		settings = map[string]any{}
+	}
+
+	var dummyUUID string
+	if u := strings.TrimSpace(providedUUID); u != "" {
+		if _, err := uuid.Parse(u); err == nil {
+			dummyUUID = u
+		}
+	}
+
+	clients, _ := settings["clients"].([]any)
+	if clients == nil {
+		clients = []any{}
+	}
+	dummyIdx := -1
+	for i, c := range clients {
+		cm, ok := c.(map[string]any)
+		if !ok {
+			continue
+		}
+		if em, _ := cm["email"].(string); em == inboundDummyClientEmail {
+			dummyIdx = i
+			if existingID, _ := cm["id"].(string); existingID != "" {
+				dummyUUID = existingID
+			}
+			break
+		}
+	}
+	if dummyUUID == "" {
+		dummyUUID = uuid.NewString()
+	}
+	dummy := map[string]any{
+		"id":         dummyUUID,
+		"email":      inboundDummyClientEmail,
+		"flow":       "",
+		"enable":     true,
+		"limitIp":    0,
+		"totalGB":    0,
+		"expiryTime": 0,
+		"tgId":       0,
+		"subId":      "",
+		"comment":    "Managed by terraform-provider-xui. Do not delete.",
+		"reset":      0,
+	}
+	if dummyIdx >= 0 {
+		clients[dummyIdx] = dummy
+	} else {
+		clients = append(clients, dummy)
+	}
+	settings["clients"] = clients
+	out, err := json.Marshal(settings)
+	if err != nil {
+		return "", "", err
+	}
+	return string(out), dummyUUID, nil
+}
+
+func findDummyClientUUID(settingsJSON string) (string, error) {
+	var root map[string]any
+	if err := json.Unmarshal([]byte(settingsJSON), &root); err != nil {
+		return "", err
+	}
+	raw, ok := root["clients"].([]any)
+	if !ok {
+		return "", nil
+	}
+	for _, c := range raw {
+		cm, ok := c.(map[string]any)
+		if !ok {
+			continue
+		}
+		if em, _ := cm["email"].(string); em == inboundDummyClientEmail {
+			id, _ := cm["id"].(string)
+			return id, nil
+		}
+	}
+	return "", nil
 }

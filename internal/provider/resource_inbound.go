@@ -38,7 +38,7 @@ func (r *inboundResource) Metadata(_ context.Context, _ resource.MetadataRequest
 
 func (r *inboundResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "A single 3x-ui / Xray inbound. Scalar fields mirror the panel export; `settings`, `stream_settings`, and `sniffing` are the same JSON strings as in an export (usually via `jsonencode()` or a heredoc). On **update**, any `clients` array inside `settings` is **ignored** and the panel’s current clients are preserved so separate client resources (e.g. `xui_vless_client`) keep working.",
+		MarkdownDescription: "A single 3x-ui / Xray inbound. Scalar fields mirror the panel export; `settings`, `stream_settings`, and `sniffing` are the same JSON strings as in an export (usually via `jsonencode()` or a heredoc). To work around panel APIs that require at least one client, this resource maintains a reserved sentinel client (`__xui_tf_do_not_delete__`) inside `settings.clients`. On **update**, any `clients` array inside `settings` is **ignored** and the panel’s current clients are preserved so separate client resources (e.g. `xui_vless_client`) keep working.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.Int64Attribute{
 				Computed:            true,
@@ -92,7 +92,7 @@ func (r *inboundResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				Default:             int64default.StaticInt64(0),
 			},
 			"settings": schema.StringAttribute{
-				MarkdownDescription: "Protocol-specific `settings` JSON string, same as export `settings` (panel stores escaped JSON; in Terraform use `jsonencode()` on an object). On **create**, use the full object from an export or a minimal valid shape for your protocol. On **update**, keys other than `clients` are applied; `clients` always come from the server.",
+				MarkdownDescription: "Protocol-specific `settings` JSON string, same as export `settings` (panel stores escaped JSON; in Terraform use `jsonencode()` on an object). On **create**, use the full object from an export or a minimal valid shape for your protocol. This resource always ensures a reserved sentinel client (`__xui_tf_do_not_delete__`) exists in `settings.clients`. On **update**, keys other than `clients` are applied; `clients` always come from the server.",
 				Required:            true,
 				PlanModifiers: []planmodifier.String{
 					settingsIgnoreClients(),
@@ -110,6 +110,13 @@ func (r *inboundResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			},
 			"tag": schema.StringAttribute{
 				MarkdownDescription: "Inbound tag assigned by the panel (e.g. `inbound-443`). Read-only.",
+				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"dummy_client_uuid": schema.StringAttribute{
+				MarkdownDescription: "UUID of provider-managed reserved inbound client (`__xui_tf_do_not_delete__`) used to satisfy panel APIs that require at least one client.",
 				Computed:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
@@ -145,6 +152,7 @@ type inboundModel struct {
 	StreamSettings types.String `tfsdk:"stream_settings"`
 	Sniffing       types.String `tfsdk:"sniffing"`
 	Tag            types.String `tfsdk:"tag"`
+	DummyClientID  types.String `tfsdk:"dummy_client_uuid"`
 }
 
 func (r *inboundResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -165,12 +173,21 @@ func (r *inboundResource) Create(ctx context.Context, req resource.CreateRequest
 		resp.Diagnostics.AddError("Invalid sniffing", err.Error())
 		return
 	}
+	settingsPayload := plan.Settings.ValueString()
+	var dummyUUID string
+	var err error
+	settingsPayload, dummyUUID, err = ensureDummyInboundClient(plan.Settings.ValueString(), "")
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid settings", err.Error())
+		return
+	}
+	plan.DummyClientID = types.StringValue(dummyUUID)
 	payload := map[string]any{
 		"remark":         plan.Remark.ValueString(),
 		"listen":         plan.Listen.ValueString(),
 		"port":           plan.Port.ValueInt64(),
 		"protocol":       plan.Protocol.ValueString(),
-		"settings":       plan.Settings.ValueString(),
+		"settings":       settingsPayload,
 		"streamSettings": plan.StreamSettings.ValueString(),
 		"sniffing":       plan.Sniffing.ValueString(),
 		"enable":         plan.Enable.ValueBool(),
@@ -197,6 +214,9 @@ func (r *inboundResource) Create(ctx context.Context, req resource.CreateRequest
 	}
 	plan.ID = types.Int64Value(int64(id))
 	plan.Tag = types.StringValue(stringFromMap(m, "tag"))
+	if dummyUUID, err := findDummyClientUUID(stringFromMap(m, "settings")); err == nil && dummyUUID != "" {
+		plan.DummyClientID = types.StringValue(dummyUUID)
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
@@ -245,6 +265,9 @@ func (r *inboundResource) Read(ctx context.Context, req resource.ReadRequest, re
 	state.StreamSettings = types.StringValue(compactJSON(stringFromMap(m, "streamSettings")))
 	state.Sniffing = types.StringValue(compactJSON(stringFromMap(m, "sniffing")))
 	state.Tag = types.StringValue(stringFromMap(m, "tag"))
+	if dummyUUID, err := findDummyClientUUID(stringFromMap(m, "settings")); err == nil && dummyUUID != "" {
+		state.DummyClientID = types.StringValue(dummyUUID)
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
@@ -283,6 +306,13 @@ func (r *inboundResource) Update(ctx context.Context, req resource.UpdateRequest
 		resp.Diagnostics.AddError("settings", err.Error())
 		return
 	}
+	var dummyUUID string
+	settingsMerged, dummyUUID, err = ensureDummyInboundClient(settingsMerged, state.DummyClientID.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("settings", err.Error())
+		return
+	}
+	state.DummyClientID = types.StringValue(dummyUUID)
 	payload := map[string]any{
 		"id":             int(state.ID.ValueInt64()),
 		"remark":         plan.Remark.ValueString(),
@@ -319,6 +349,9 @@ func (r *inboundResource) Update(ctx context.Context, req resource.UpdateRequest
 		if m, err := inboundMapFromJSON(rawAfter); err == nil {
 			state.Tag = types.StringValue(stringFromMap(m, "tag"))
 			state.Settings = types.StringValue(compactJSON(stringFromMap(m, "settings")))
+			if dummyUUID, err := findDummyClientUUID(stringFromMap(m, "settings")); err == nil && dummyUUID != "" {
+				state.DummyClientID = types.StringValue(dummyUUID)
+			}
 		}
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
