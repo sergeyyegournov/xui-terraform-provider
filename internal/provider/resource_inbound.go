@@ -247,6 +247,10 @@ func (r *inboundResource) Read(ctx context.Context, req resource.ReadRequest, re
 		resp.Diagnostics.AddError("Decode error", err.Error())
 		return
 	}
+	if m, err = r.ensureDummyClientPresent(m, state.DummyClientID.ValueString()); err != nil {
+		resp.Diagnostics.AddError("API error", err.Error())
+		return
+	}
 	state.Protocol = types.StringValue(stringFromMap(m, "protocol"))
 	state.Remark = types.StringValue(stringFromMap(m, "remark"))
 	state.Listen = types.StringValue(stringFromMap(m, "listen"))
@@ -403,6 +407,55 @@ func inboundUserManagedFieldsChanged(plan, state inboundModel) bool {
 		return true
 	}
 	return false
+}
+
+func (r *inboundResource) ensureDummyClientPresent(cur map[string]any, preferredDummyUUID string) (map[string]any, error) {
+	settingsJSON := stringFromMap(cur, "settings")
+	dummyUUID, err := findDummyClientUUID(settingsJSON)
+	if err != nil {
+		return nil, fmt.Errorf("parse settings: %w", err)
+	}
+	if dummyUUID != "" {
+		return cur, nil
+	}
+
+	settingsWithDummy, _, err := ensureDummyInboundClient(settingsJSON, preferredDummyUUID)
+	if err != nil {
+		return nil, err
+	}
+	id, err := intFromMap(cur, "id")
+	if err != nil {
+		return nil, err
+	}
+	payload := map[string]any{
+		"id":             id,
+		"remark":         stringFromMap(cur, "remark"),
+		"listen":         stringFromMap(cur, "listen"),
+		"port":           int64FromMap(cur, "port"),
+		"protocol":       stringFromMap(cur, "protocol"),
+		"settings":       settingsWithDummy,
+		"streamSettings": stringFromMap(cur, "streamSettings"),
+		"sniffing":       stringFromMap(cur, "sniffing"),
+		"enable":         boolFromMap(cur, "enable"),
+		"expiryTime":     int64FromMap(cur, "expiryTime"),
+		"trafficReset":   stringFromMap(cur, "trafficReset"),
+		"total":          int64FromMap(cur, "total"),
+		"up":             int64FromMap(cur, "up"),
+		"down":           int64FromMap(cur, "down"),
+		"allTime":        int64FromMap(cur, "allTime"),
+	}
+	if _, err := r.client.UpdateInbound(id, payload); err != nil {
+		return nil, err
+	}
+	rawAfter, err := r.client.GetInbound(id)
+	if err != nil {
+		return nil, err
+	}
+	m, err := inboundMapFromJSON(rawAfter)
+	if err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 func (r *inboundResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
