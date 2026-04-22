@@ -300,6 +300,17 @@ func (r *inboundResource) Update(ctx context.Context, req resource.UpdateRequest
 		resp.Diagnostics.AddError("Decode error", err.Error())
 		return
 	}
+	if !inboundUserManagedFieldsChanged(plan, state) {
+		state.Tag = types.StringValue(stringFromMap(cur, "tag"))
+		state.Settings = types.StringValue(compactJSON(stringFromMap(cur, "settings")))
+		state.StreamSettings = types.StringValue(compactJSON(stringFromMap(cur, "streamSettings")))
+		state.Sniffing = types.StringValue(compactJSON(stringFromMap(cur, "sniffing")))
+		if dummyUUID, err := findDummyClientUUID(stringFromMap(cur, "settings")); err == nil {
+			state.DummyClientID = types.StringValue(dummyUUID)
+		}
+		resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
+		return
+	}
 	settingsJSON := stringFromMap(cur, "settings")
 	settingsMerged, err := mergeInboundSettingsPreservingClients(settingsJSON, plan.Settings.ValueString())
 	if err != nil {
@@ -355,6 +366,43 @@ func (r *inboundResource) Update(ctx context.Context, req resource.UpdateRequest
 		}
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
+}
+
+func inboundUserManagedFieldsChanged(plan, state inboundModel) bool {
+	if plan.Protocol.ValueString() != state.Protocol.ValueString() {
+		return true
+	}
+	if plan.Remark.ValueString() != state.Remark.ValueString() {
+		return true
+	}
+	if plan.Listen.ValueString() != state.Listen.ValueString() {
+		return true
+	}
+	if plan.Port.ValueInt64() != state.Port.ValueInt64() {
+		return true
+	}
+	if plan.Enable.ValueBool() != state.Enable.ValueBool() {
+		return true
+	}
+	if plan.ExpiryTime.ValueInt64() != state.ExpiryTime.ValueInt64() {
+		return true
+	}
+	if plan.TrafficReset.ValueString() != state.TrafficReset.ValueString() {
+		return true
+	}
+	if plan.Total.ValueInt64() != state.Total.ValueInt64() {
+		return true
+	}
+	if compactJSON(plan.Settings.ValueString()) != compactJSON(state.Settings.ValueString()) {
+		return true
+	}
+	if compactJSON(plan.StreamSettings.ValueString()) != compactJSON(state.StreamSettings.ValueString()) {
+		return true
+	}
+	if compactJSON(plan.Sniffing.ValueString()) != compactJSON(state.Sniffing.ValueString()) {
+		return true
+	}
+	return false
 }
 
 func (r *inboundResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {

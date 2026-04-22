@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -69,15 +70,25 @@ func (d *inboundsDataSource) Read(ctx context.Context, req datasource.ReadReques
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	var arr []map[string]any
-	if err := json.Unmarshal(raw, &arr); err != nil {
-		resp.Diagnostics.AddError("Decode error", err.Error())
-		return
-	}
 	filter := ""
 	if !cfg.Protocol.IsNull() && cfg.Protocol.ValueString() != "" {
 		filter = cfg.Protocol.ValueString()
 	}
+	encoded, err := filterInboundsJSON(raw, filter)
+	if err != nil {
+		resp.Diagnostics.AddError("Decode error", err.Error())
+		return
+	}
+	cfg.JSON = types.StringValue(string(encoded))
+	resp.Diagnostics.Append(resp.State.Set(ctx, cfg)...)
+}
+
+func filterInboundsJSON(raw []byte, protocol string) ([]byte, error) {
+	var arr []map[string]any
+	if err := json.Unmarshal(raw, &arr); err != nil {
+		return nil, err
+	}
+	filter := strings.TrimSpace(protocol)
 	var out []map[string]any
 	for _, m := range arr {
 		if filter != "" && stringFromMap(m, "protocol") != filter {
@@ -85,11 +96,5 @@ func (d *inboundsDataSource) Read(ctx context.Context, req datasource.ReadReques
 		}
 		out = append(out, m)
 	}
-	encoded, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
-		resp.Diagnostics.AddError("Encode error", err.Error())
-		return
-	}
-	cfg.JSON = types.StringValue(string(encoded))
-	resp.Diagnostics.Append(resp.State.Set(ctx, cfg)...)
+	return json.MarshalIndent(out, "", "  ")
 }

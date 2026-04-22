@@ -1,0 +1,57 @@
+{
+  "success": true,
+  "msg": "",
+  "obj": [
+    {
+      "id": 1,
+      "up": 54674230,
+      "down": 421943806,
+      "total": 0,
+      "allTime": 476618036,
+      "remark": "",
+      "enable": true,
+      "expiryTime": 0,
+      "trafficReset": "never",
+      "lastTrafficResetTime": 0,
+      "clientStats": [
+        {
+          "id": 2,
+          "inboundId": 1,
+          "enable": true,
+          "email": "user@example.com",
+          "uuid": "00000000-0000-0000-0000-000000000000",
+          "subId": "subid-redacted",
+          "up": 42148643,
+          "down": 167249967,
+          "allTime": 209398610,
+          "expiryTime": 0,
+          "total": 0,
+          "reset": 0,
+          "lastOnline": 1776840718001
+        },
+        {
+          "id": 3,
+          "inboundId": 1,
+          "enable": true,
+          "email": "user@example.com",
+          "uuid": "00000000-0000-0000-0000-000000000000",
+          "subId": "subid-redacted",
+          "up": 0,
+          "down": 0,
+          "allTime": 0,
+          "expiryTime": 0,
+          "total": 0,
+          "reset": 0,
+          "lastOnline": 0
+        }
+      ],
+      "listen": "",
+      "port": 10002,
+      "protocol": "vless",
+      "settings": "{\"clients\":[{\"comment\":\"\",\"created_at\":1776765625000,\"email\":\"user@example.com\",\"enable\":true,\"expiryTime\":0,\"flow\":\"\",\"id\":\"00000000-0000-0000-0000-000000000000\",\"limitIp\":0,\"reset\":0,\"subId\":\"subid-redacted\",\"tgId\":0,\"totalGB\":0,\"updated_at\":1776765625000},{\"comment\":\"\",\"created_at\":1776765625000,\"email\":\"user@example.com\",\"enable\":true,\"expiryTime\":0,\"flow\":\"\",\"id\":\"00000000-0000-0000-0000-000000000000\",\"limitIp\":0,\"reset\":0,\"subId\":\"subid-redacted\",\"tgId\":0,\"totalGB\":0,\"updated_at\":1776765625000}],\"decryption\":\"none\",\"encryption\":\"none\"}",
+      "streamSettings": "{\"externalProxy\":[],\"network\":\"xhttp\",\"security\":\"none\",\"xhttpSettings\":{\"headers\":{},\"host\":\"\",\"mode\":\"auto\",\"noSSEHeader\":false,\"path\":\"/api-v3\",\"scMaxBufferedPosts\":30,\"scMaxEachPostBytes\":\"1000000\",\"scStreamUpServerSecs\":\"20-80\",\"seqKey\":\"\",\"seqPlacement\":\"\",\"sessionKey\":\"\",\"sessionPlacement\":\"\",\"uplinkChunkSize\":0,\"uplinkDataKey\":\"\",\"uplinkDataPlacement\":\"\",\"uplinkHTTPMethod\":\"\",\"xPaddingBytes\":\"100-1000\",\"xPaddingHeader\":\"\",\"xPaddingKey\":\"\",\"xPaddingMethod\":\"\",\"xPaddingObfsMode\":false,\"xPaddingPlacement\":\"\"}}",
+      "tag": "inbound-10002",
+      "sniffing": "{\"destOverride\":[\"http\",\"tls\"],\"enabled\":false,\"metadataOnly\":false,\"routeOnly\":false}"
+    }
+  ]
+}

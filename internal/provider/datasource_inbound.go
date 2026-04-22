@@ -96,15 +96,21 @@ func (d *inboundDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	m, err := inboundMapFromJSON(raw)
-	if err != nil {
+	if err := fillInboundDSModelFromRaw(raw, &cfg); err != nil {
 		resp.Diagnostics.AddError("Decode error", err.Error())
 		return
 	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, cfg)...)
+}
+
+func fillInboundDSModelFromRaw(raw []byte, cfg *inboundDSModel) error {
+	m, err := inboundMapFromJSON(raw)
+	if err != nil {
+		return err
+	}
 	port, err := intFromMap(m, "port")
 	if err != nil {
-		resp.Diagnostics.AddError("Decode error", err.Error())
-		return
+		return err
 	}
 	cfg.Remark = types.StringValue(stringFromMap(m, "remark"))
 	cfg.Listen = types.StringValue(stringFromMap(m, "listen"))
@@ -115,5 +121,5 @@ func (d *inboundDataSource) Read(ctx context.Context, req datasource.ReadRequest
 	cfg.StreamSettings = types.StringValue(stringFromMap(m, "streamSettings"))
 	cfg.Sniffing = types.StringValue(stringFromMap(m, "sniffing"))
 	cfg.JSON = types.StringValue(string(raw))
-	resp.Diagnostics.Append(resp.State.Set(ctx, cfg)...)
+	return nil
 }
