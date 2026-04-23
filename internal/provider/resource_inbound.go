@@ -300,6 +300,12 @@ func (r *inboundResource) Update(ctx context.Context, req resource.UpdateRequest
 		resp.Diagnostics.AddError("Invalid sniffing", err.Error())
 		return
 	}
+	// Serialize with any concurrent xui_vless_client RMW on the same inbound:
+	// we merge the existing client list with the planned settings below, so a
+	// parallel client upsert could otherwise land between our GET and our
+	// UpdateInbound and be lost.
+	unlock := r.client.LockInbound(int(state.ID.ValueInt64()))
+	defer unlock()
 	raw, err := r.client.GetInbound(int(state.ID.ValueInt64()))
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
@@ -427,11 +433,34 @@ func (r *inboundResource) ensureDummyClientPresent(cur map[string]any, preferred
 		return cur, nil
 	}
 
-	settingsWithDummy, _, err := ensureDummyInboundClient(settingsJSON, preferredDummyUUID)
+	id, err := intFromMap(cur, "id")
 	if err != nil {
 		return nil, err
 	}
-	id, err := intFromMap(cur, "id")
+	// Lock the inbound for the full re-read / mutate / write cycle. A
+	// concurrent xui_vless_client mutation would otherwise push its own
+	// settings.clients list concurrently and clobber the sentinel we're
+	// about to add. After taking the lock, re-fetch the inbound so we
+	// patch the current state, not a copy that may have been mutated
+	// while we were waiting for the lock.
+	unlock := r.client.LockInbound(id)
+	defer unlock()
+	raw, err := r.client.GetInbound(id)
+	if err != nil {
+		return nil, err
+	}
+	cur, err = inboundMapFromJSON(raw)
+	if err != nil {
+		return nil, err
+	}
+	settingsJSON = stringFromMap(cur, "settings")
+	if dummyUUID, err := findDummyClientUUID(settingsJSON); err != nil {
+		return nil, fmt.Errorf("parse settings: %w", err)
+	} else if dummyUUID != "" {
+		return cur, nil
+	}
+
+	settingsWithDummy, _, err := ensureDummyInboundClient(settingsJSON, preferredDummyUUID)
 	if err != nil {
 		return nil, err
 	}

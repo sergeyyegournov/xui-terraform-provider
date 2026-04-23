@@ -10,6 +10,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
+	"sync"
 )
 
 // Client talks to a 3x-ui panel using the same cookie session as the web UI.
@@ -18,6 +19,17 @@ type Client struct {
 	http    *http.Client
 	user    string
 	pass    string
+
+	// inboundMus serializes read-modify-write sequences against a single
+	// inbound's settings. 3x-ui's per-client endpoints (addClient,
+	// updateClient, delClient) are stubs / unreliable in current releases,
+	// so every client mutation this package performs is done by fetching
+	// the inbound, patching settings.clients, and pushing the whole inbound
+	// back via /panel/api/inbounds/update. Terraform runs sibling resources
+	// concurrently (for_each, -parallelism), so without this lock two
+	// parallel client upserts on the same inbound would clobber each other.
+	inboundMuMu sync.Mutex
+	inboundMus  map[int]*sync.Mutex
 }
 
 // NewClient builds an HTTP client; baseURL must include the panel path prefix (e.g. https://host:port/<uuid>/).
@@ -332,26 +344,33 @@ func (c *Client) DeleteInbound(id int) error {
 	return err
 }
 
-// AddInboundClient appends clients in settings to an existing inbound (see 3x-ui AddInboundClient).
-func (c *Client) AddInboundClient(inboundID int, settingsWithClientsJSON string) error {
-	payload := map[string]any{
-		"id":       inboundID,
-		"settings": settingsWithClientsJSON,
+// LockInbound acquires the per-inbound read-modify-write mutex for id and
+// returns a release function the caller must defer. 3x-ui's per-client
+// endpoints (addClient / updateClient / delClient) don't reliably mutate the
+// underlying store, so the provider performs all client-level mutations by
+// reading the inbound, patching settings.clients in memory, and pushing the
+// full inbound back through /panel/api/inbounds/update. Terraform runs
+// sibling resources concurrently (for_each, -parallelism) and without this
+// lock two parallel upserts against the same inbound would race and one
+// would be lost.
+//
+// The lock is per-process, per-inbound-id. It does not protect against
+// concurrent writes from other clients (the panel web UI, another apply),
+// but it is sufficient for a single `terraform apply`, which is the only
+// concurrency model Terraform guarantees.
+func (c *Client) LockInbound(id int) func() {
+	c.inboundMuMu.Lock()
+	if c.inboundMus == nil {
+		c.inboundMus = map[int]*sync.Mutex{}
 	}
-	_, err := c.postJSON([]string{"panel", "api", "inbounds", "addClient"}, payload)
-	return err
-}
-
-// UpdateInboundClient updates a single client; clientID is the VLESS UUID string.
-func (c *Client) UpdateInboundClient(clientID string, inboundPayload map[string]any) error {
-	_, err := c.postJSON([]string{"panel", "api", "inbounds", "updateClient", clientID}, inboundPayload)
-	return err
-}
-
-// DeleteInboundClient removes a client UUID from an inbound.
-func (c *Client) DeleteInboundClient(inboundID int, clientID string) error {
-	_, err := c.postJSON([]string{"panel", "api", "inbounds", fmt.Sprintf("%d", inboundID), "delClient", clientID}, map[string]any{})
-	return err
+	mu, ok := c.inboundMus[id]
+	if !ok {
+		mu = &sync.Mutex{}
+		c.inboundMus[id] = mu
+	}
+	c.inboundMuMu.Unlock()
+	mu.Lock()
+	return mu.Unlock
 }
 
 // GetPanelSettings returns all panel settings as a JSON map.

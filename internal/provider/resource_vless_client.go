@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -39,7 +38,7 @@ func (r *vlessClientResource) Metadata(_ context.Context, _ resource.MetadataReq
 
 func (r *vlessClientResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "VLESS user (client) on an existing 3x-ui inbound. Uses `/panel/api/inbounds/addClient` and related routes.",
+		MarkdownDescription: "VLESS user (client) on an existing 3x-ui inbound. Because the panel's `addClient` / `updateClient` / `delClient` endpoints are stubs in current 3x-ui releases (they either no-op or crash), this resource manages clients by reading the parent inbound, patching its `settings.clients` array, and pushing the whole inbound back through `/panel/api/inbounds/update`. The provider holds an in-process, per-inbound mutex for the duration of each mutation so parallel `for_each` instances can't race.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
@@ -163,27 +162,11 @@ func (r *vlessClientResource) Create(ctx context.Context, req resource.CreateReq
 		return
 	}
 	clientObj := r.clientMapFromPlan(plan, uid)
-	settings := map[string]any{"clients": []any{clientObj}}
-	raw, err := json.MarshalIndent(settings, "", "  ")
+	inboundID := plan.InboundID.ValueInt64()
+	cm, err := r.upsertVLESSClient(inboundID, plan.Email.ValueString(), clientObj)
 	if err != nil {
-		resp.Diagnostics.AddError("Internal error", err.Error())
-		return
-	}
-	if err := r.client.AddInboundClient(int(plan.InboundID.ValueInt64()), string(raw)); err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
-	}
-	cm, err := r.waitForVLESSClient(plan.InboundID.ValueInt64(), plan.Email.ValueString(), 5, 300*time.Millisecond)
-	if err != nil {
-		if fbErr := r.upsertVLESSClientViaInboundUpdate(plan.InboundID.ValueInt64(), clientObj); fbErr != nil {
-			resp.Diagnostics.AddError("API error", fmt.Sprintf("addClient returned success but client was not created (%v); fallback update failed: %v", err, fbErr))
-			return
-		}
-		cm, err = r.waitForVLESSClient(plan.InboundID.ValueInt64(), plan.Email.ValueString(), 5, 300*time.Millisecond)
-		if err != nil {
-			resp.Diagnostics.AddError("API error", fmt.Sprintf("client still missing after fallback update: %v", err))
-			return
-		}
 	}
 	createdUUID := clientUUID(cm)
 	if createdUUID == "" {
@@ -300,29 +283,10 @@ func (r *vlessClientResource) Update(ctx context.Context, req resource.UpdateReq
 	}
 	uid := state.ID.ValueString()
 	clientObj := r.clientMapFromPlan(plan, uid)
-	settings := map[string]any{"clients": []any{clientObj}}
-	raw, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		resp.Diagnostics.AddError("Internal error", err.Error())
-		return
-	}
-	payload := map[string]any{
-		"id":       int(plan.InboundID.ValueInt64()),
-		"settings": string(raw),
-	}
-	if err := r.client.UpdateInboundClient(uid, payload); err != nil {
+	inboundID := plan.InboundID.ValueInt64()
+	if _, err := r.upsertVLESSClient(inboundID, state.Email.ValueString(), clientObj); err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
-	}
-	if _, err := r.waitForVLESSClient(plan.InboundID.ValueInt64(), state.Email.ValueString(), 5, 300*time.Millisecond); err != nil {
-		if fbErr := r.upsertVLESSClientViaInboundUpdate(plan.InboundID.ValueInt64(), clientObj); fbErr != nil {
-			resp.Diagnostics.AddError("API error", fmt.Sprintf("updateClient returned success but client was not found after update (%v); fallback update failed: %v", err, fbErr))
-			return
-		}
-		if _, err := r.waitForVLESSClient(plan.InboundID.ValueInt64(), state.Email.ValueString(), 5, 300*time.Millisecond); err != nil {
-			resp.Diagnostics.AddError("API error", fmt.Sprintf("client still missing after fallback update: %v", err))
-			return
-		}
 	}
 	state.Flow = plan.Flow
 	state.Enable = plan.Enable
@@ -342,7 +306,7 @@ func (r *vlessClientResource) Delete(ctx context.Context, req resource.DeleteReq
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.client.DeleteInboundClient(int(state.InboundID.ValueInt64()), state.ID.ValueString()); err != nil {
+	if err := r.removeVLESSClient(state.InboundID.ValueInt64(), state.Email.ValueString(), state.ID.ValueString()); err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 	}
 }
@@ -375,62 +339,36 @@ func parseInt64Trim(s string) (int64, error) {
 	return strconv.ParseInt(strings.TrimSpace(s), 10, 64)
 }
 
-func (r *vlessClientResource) waitForVLESSClient(inboundID int64, email string, attempts int, delay time.Duration) (map[string]any, error) {
-	var lastErr error
-	for i := 0; i < attempts; i++ {
-		raw, err := r.client.GetInbound(int(inboundID))
-		if err != nil {
-			lastErr = err
-		} else {
-			m, err := inboundMapFromJSON(raw)
-			if err != nil {
-				lastErr = err
-			} else {
-				cm, err := findVLESSClientByEmail(stringFromMap(m, "settings"), email)
-				if err == nil {
-					return cm, nil
-				}
-				lastErr = err
-			}
-		}
-		if i < attempts-1 {
-			time.Sleep(delay)
-		}
-	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("client with email %q not found", email)
-	}
-	return nil, lastErr
-}
-
-func (r *vlessClientResource) upsertVLESSClientViaInboundUpdate(inboundID int64, clientObj map[string]any) error {
-	raw, err := r.client.GetInbound(int(inboundID))
+// upsertVLESSClient writes clientObj into the inbound's settings.clients list,
+// keyed by email, and pushes the whole inbound back to the panel. The
+// matchEmail argument is the email currently stored in Terraform state (for
+// Update it may differ from clientObj["email"] if the user renames, though the
+// schema marks email as RequiresReplace, so in practice they are equal). It
+// returns the final client map as stored on the panel after the write.
+//
+// 3x-ui's addClient / updateClient endpoints are stubs that do not reliably
+// mutate persistent state, so every client mutation goes through
+// /panel/api/inbounds/update. That is a read-modify-write sequence, which
+// Terraform's per-resource parallelism (for_each, -parallelism) would
+// otherwise race on; r.client.LockInbound serializes RMWs per inbound id
+// within the provider process.
+func (r *vlessClientResource) upsertVLESSClient(inboundID int64, matchEmail string, clientObj map[string]any) (map[string]any, error) {
+	unlock := r.client.LockInbound(int(inboundID))
+	defer unlock()
+	inbound, settings, err := r.fetchInboundSettings(inboundID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	inbound, err := inboundMapFromJSON(raw)
-	if err != nil {
-		return err
-	}
-	var settings map[string]any
-	if err := json.Unmarshal([]byte(stringFromMap(inbound, "settings")), &settings); err != nil {
-		return fmt.Errorf("parse inbound settings: %w", err)
-	}
-	if settings == nil {
-		settings = map[string]any{}
-	}
-	email, _ := clientObj["email"].(string)
 	clients, _ := settings["clients"].([]any)
-	if clients == nil {
-		clients = []any{}
-	}
+	newEmail, _ := clientObj["email"].(string)
 	replaced := false
 	for i, c := range clients {
 		cm, ok := c.(map[string]any)
 		if !ok {
 			continue
 		}
-		if em, _ := cm["email"].(string); em == email {
+		em, _ := cm["email"].(string)
+		if em == matchEmail || (matchEmail == "" && em == newEmail) {
 			clients[i] = clientObj
 			replaced = true
 			break
@@ -440,6 +378,88 @@ func (r *vlessClientResource) upsertVLESSClientViaInboundUpdate(inboundID int64,
 		clients = append(clients, clientObj)
 	}
 	settings["clients"] = clients
+	if err := r.pushInbound(inboundID, inbound, settings); err != nil {
+		return nil, err
+	}
+	rawAfter, err := r.client.GetInbound(int(inboundID))
+	if err != nil {
+		return nil, err
+	}
+	after, err := inboundMapFromJSON(rawAfter)
+	if err != nil {
+		return nil, err
+	}
+	cm, err := findVLESSClientByEmail(stringFromMap(after, "settings"), newEmail)
+	if err != nil {
+		return nil, fmt.Errorf("client %q not found after inbound update: %w", newEmail, err)
+	}
+	return cm, nil
+}
+
+// removeVLESSClient deletes the client matching clientUUID (or, as a
+// fallback, email) from the inbound's settings.clients list and pushes the
+// inbound back. Runs under the per-inbound lock for the same reasons as
+// upsertVLESSClient.
+func (r *vlessClientResource) removeVLESSClient(inboundID int64, email, clientUUID string) error {
+	unlock := r.client.LockInbound(int(inboundID))
+	defer unlock()
+	inbound, settings, err := r.fetchInboundSettings(inboundID)
+	if err != nil {
+		return err
+	}
+	clients, _ := settings["clients"].([]any)
+	filtered := clients[:0]
+	removed := false
+	for _, c := range clients {
+		cm, ok := c.(map[string]any)
+		if !ok {
+			filtered = append(filtered, c)
+			continue
+		}
+		id, _ := cm["id"].(string)
+		em, _ := cm["email"].(string)
+		if (clientUUID != "" && id == clientUUID) || (clientUUID == "" && em == email) {
+			removed = true
+			continue
+		}
+		filtered = append(filtered, c)
+	}
+	if !removed {
+		return nil
+	}
+	settings["clients"] = filtered
+	return r.pushInbound(inboundID, inbound, settings)
+}
+
+// fetchInboundSettings gets the inbound and parses its settings JSON into a
+// map so callers can patch it in place before pushing back via pushInbound.
+func (r *vlessClientResource) fetchInboundSettings(inboundID int64) (map[string]any, map[string]any, error) {
+	raw, err := r.client.GetInbound(int(inboundID))
+	if err != nil {
+		return nil, nil, err
+	}
+	inbound, err := inboundMapFromJSON(raw)
+	if err != nil {
+		return nil, nil, err
+	}
+	var settings map[string]any
+	if err := json.Unmarshal([]byte(stringFromMap(inbound, "settings")), &settings); err != nil {
+		return nil, nil, fmt.Errorf("parse inbound settings: %w", err)
+	}
+	if settings == nil {
+		settings = map[string]any{}
+	}
+	if _, ok := settings["clients"].([]any); !ok {
+		settings["clients"] = []any{}
+	}
+	return inbound, settings, nil
+}
+
+// pushInbound serializes settings back onto inbound and sends the full
+// inbound object to /panel/api/inbounds/update. All other inbound fields
+// (port, stream settings, sniffing, traffic counters, …) are passed through
+// verbatim from the GET we just did so we don't clobber them.
+func (r *vlessClientResource) pushInbound(inboundID int64, inbound, settings map[string]any) error {
 	settingsRaw, err := json.Marshal(settings)
 	if err != nil {
 		return err
