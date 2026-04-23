@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -99,13 +100,15 @@ func (r *inboundResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				},
 			},
 			"stream_settings": schema.StringAttribute{
-				MarkdownDescription: "`streamSettings` JSON string from export (transport + TLS/REALITY). See Xray [StreamSettingsObject](https://xtls.github.io/config/inbounds.html#streamsettingsobject).",
+				MarkdownDescription: "`streamSettings` JSON string from export (transport + TLS/REALITY). See Xray [StreamSettingsObject](https://xtls.github.io/config/inbounds.html#streamsettingsobject). Compared with JSON semantic equality, so whitespace and key-order differences between your config and the panel do not show as drift.",
 				Required:            true,
+				CustomType:          jsontypes.NormalizedType{},
 			},
 			"sniffing": schema.StringAttribute{
-				MarkdownDescription: "`sniffing` JSON string from export.",
+				MarkdownDescription: "`sniffing` JSON string from export. Compared with JSON semantic equality.",
 				Optional:            true,
 				Computed:            true,
+				CustomType:          jsontypes.NormalizedType{},
 				Default:             stringdefault.StaticString("{}"),
 			},
 			"tag": schema.StringAttribute{
@@ -148,11 +151,11 @@ type inboundModel struct {
 	ExpiryTime     types.Int64  `tfsdk:"expiry_time"`
 	TrafficReset   types.String `tfsdk:"traffic_reset"`
 	Total          types.Int64  `tfsdk:"total"`
-	Settings       types.String `tfsdk:"settings"`
-	StreamSettings types.String `tfsdk:"stream_settings"`
-	Sniffing       types.String `tfsdk:"sniffing"`
-	Tag            types.String `tfsdk:"tag"`
-	DummyClientID  types.String `tfsdk:"dummy_client_uuid"`
+	Settings       types.String         `tfsdk:"settings"`
+	StreamSettings jsontypes.Normalized `tfsdk:"stream_settings"`
+	Sniffing       jsontypes.Normalized `tfsdk:"sniffing"`
+	Tag            types.String         `tfsdk:"tag"`
+	DummyClientID  types.String         `tfsdk:"dummy_client_uuid"`
 }
 
 func (r *inboundResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -173,10 +176,7 @@ func (r *inboundResource) Create(ctx context.Context, req resource.CreateRequest
 		resp.Diagnostics.AddError("Invalid sniffing", err.Error())
 		return
 	}
-	settingsPayload := plan.Settings.ValueString()
-	var dummyUUID string
-	var err error
-	settingsPayload, dummyUUID, err = ensureDummyInboundClient(plan.Settings.ValueString(), "")
+	settingsPayload, dummyUUID, err := ensureDummyInboundClient(plan.Settings.ValueString(), "")
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid settings", err.Error())
 		return
@@ -187,9 +187,9 @@ func (r *inboundResource) Create(ctx context.Context, req resource.CreateRequest
 		"listen":         plan.Listen.ValueString(),
 		"port":           plan.Port.ValueInt64(),
 		"protocol":       plan.Protocol.ValueString(),
-		"settings":       settingsPayload,
-		"streamSettings": plan.StreamSettings.ValueString(),
-		"sniffing":       plan.Sniffing.ValueString(),
+		"settings":       canonicalizeInboundSettings(settingsPayload),
+		"streamSettings": compactJSON(plan.StreamSettings.ValueString()),
+		"sniffing":       compactJSON(plan.Sniffing.ValueString()),
 		"enable":         plan.Enable.ValueBool(),
 		"expiryTime":     plan.ExpiryTime.ValueInt64(),
 		"trafficReset":   plan.TrafficReset.ValueString(),
@@ -217,6 +217,12 @@ func (r *inboundResource) Create(ctx context.Context, req resource.CreateRequest
 	if dummyUUID, err := findDummyClientUUID(stringFromMap(m, "settings")); err == nil && dummyUUID != "" {
 		plan.DummyClientID = types.StringValue(dummyUUID)
 	}
+	// Deliberately leave plan.Settings untouched: Terraform's post-apply
+	// consistency check requires state to equal the planned value, and the
+	// planned value is the user's config (no sentinel client). The
+	// follow-up Read auto-refresh canonicalizes state to include the
+	// sentinel, and the settings plan modifier reconciles on subsequent
+	// plans.
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
@@ -265,9 +271,9 @@ func (r *inboundResource) Read(ctx context.Context, req resource.ReadRequest, re
 	state.ExpiryTime = types.Int64Value(int64(exp))
 	state.TrafficReset = types.StringValue(stringFromMap(m, "trafficReset"))
 	state.Total = types.Int64Value(int64FromMap(m, "total"))
-	state.Settings = types.StringValue(compactJSON(stringFromMap(m, "settings")))
-	state.StreamSettings = types.StringValue(compactJSON(stringFromMap(m, "streamSettings")))
-	state.Sniffing = types.StringValue(compactJSON(stringFromMap(m, "sniffing")))
+	state.Settings = types.StringValue(canonicalizeInboundSettings(stringFromMap(m, "settings")))
+	state.StreamSettings = jsontypes.NewNormalizedValue(stringFromMap(m, "streamSettings"))
+	state.Sniffing = jsontypes.NewNormalizedValue(stringFromMap(m, "sniffing"))
 	state.Tag = types.StringValue(stringFromMap(m, "tag"))
 	if dummyUUID, err := findDummyClientUUID(stringFromMap(m, "settings")); err == nil && dummyUUID != "" {
 		state.DummyClientID = types.StringValue(dummyUUID)
@@ -306,9 +312,9 @@ func (r *inboundResource) Update(ctx context.Context, req resource.UpdateRequest
 	}
 	if !inboundUserManagedFieldsChanged(plan, state) {
 		state.Tag = types.StringValue(stringFromMap(cur, "tag"))
-		state.Settings = types.StringValue(compactJSON(stringFromMap(cur, "settings")))
-		state.StreamSettings = types.StringValue(compactJSON(stringFromMap(cur, "streamSettings")))
-		state.Sniffing = types.StringValue(compactJSON(stringFromMap(cur, "sniffing")))
+		state.Settings = types.StringValue(canonicalizeInboundSettings(stringFromMap(cur, "settings")))
+		state.StreamSettings = jsontypes.NewNormalizedValue(stringFromMap(cur, "streamSettings"))
+		state.Sniffing = jsontypes.NewNormalizedValue(stringFromMap(cur, "sniffing"))
 		if dummyUUID, err := findDummyClientUUID(stringFromMap(cur, "settings")); err == nil {
 			state.DummyClientID = types.StringValue(dummyUUID)
 		}
@@ -334,9 +340,9 @@ func (r *inboundResource) Update(ctx context.Context, req resource.UpdateRequest
 		"listen":         plan.Listen.ValueString(),
 		"port":           plan.Port.ValueInt64(),
 		"protocol":       plan.Protocol.ValueString(),
-		"settings":       settingsMerged,
-		"streamSettings": plan.StreamSettings.ValueString(),
-		"sniffing":       plan.Sniffing.ValueString(),
+		"settings":       canonicalizeInboundSettings(settingsMerged),
+		"streamSettings": compactJSON(plan.StreamSettings.ValueString()),
+		"sniffing":       compactJSON(plan.Sniffing.ValueString()),
 		"enable":         plan.Enable.ValueBool(),
 		"expiryTime":     plan.ExpiryTime.ValueInt64(),
 		"trafficReset":   plan.TrafficReset.ValueString(),
@@ -357,13 +363,15 @@ func (r *inboundResource) Update(ctx context.Context, req resource.UpdateRequest
 	state.ExpiryTime = plan.ExpiryTime
 	state.TrafficReset = plan.TrafficReset
 	state.Total = plan.Total
-	state.Settings = types.StringValue(settingsMerged)
+	state.Settings = types.StringValue(canonicalizeInboundSettings(settingsMerged))
 	state.StreamSettings = plan.StreamSettings
 	state.Sniffing = plan.Sniffing
 	if rawAfter, err := r.client.GetInbound(int(state.ID.ValueInt64())); err == nil {
 		if m, err := inboundMapFromJSON(rawAfter); err == nil {
 			state.Tag = types.StringValue(stringFromMap(m, "tag"))
-			state.Settings = types.StringValue(compactJSON(stringFromMap(m, "settings")))
+			state.Settings = types.StringValue(canonicalizeInboundSettings(stringFromMap(m, "settings")))
+			state.StreamSettings = jsontypes.NewNormalizedValue(stringFromMap(m, "streamSettings"))
+			state.Sniffing = jsontypes.NewNormalizedValue(stringFromMap(m, "sniffing"))
 			if dummyUUID, err := findDummyClientUUID(stringFromMap(m, "settings")); err == nil && dummyUUID != "" {
 				state.DummyClientID = types.StringValue(dummyUUID)
 			}
@@ -397,7 +405,7 @@ func inboundUserManagedFieldsChanged(plan, state inboundModel) bool {
 	if plan.Total.ValueInt64() != state.Total.ValueInt64() {
 		return true
 	}
-	if compactJSON(plan.Settings.ValueString()) != compactJSON(state.Settings.ValueString()) {
+	if canonicalizeInboundSettings(plan.Settings.ValueString()) != canonicalizeInboundSettings(state.Settings.ValueString()) {
 		return true
 	}
 	if compactJSON(plan.StreamSettings.ValueString()) != compactJSON(state.StreamSettings.ValueString()) {
@@ -433,9 +441,9 @@ func (r *inboundResource) ensureDummyClientPresent(cur map[string]any, preferred
 		"listen":         stringFromMap(cur, "listen"),
 		"port":           int64FromMap(cur, "port"),
 		"protocol":       stringFromMap(cur, "protocol"),
-		"settings":       settingsWithDummy,
-		"streamSettings": stringFromMap(cur, "streamSettings"),
-		"sniffing":       stringFromMap(cur, "sniffing"),
+		"settings":       canonicalizeInboundSettings(settingsWithDummy),
+		"streamSettings": compactJSON(stringFromMap(cur, "streamSettings")),
+		"sniffing":       compactJSON(stringFromMap(cur, "sniffing")),
 		"enable":         boolFromMap(cur, "enable"),
 		"expiryTime":     int64FromMap(cur, "expiryTime"),
 		"trafficReset":   stringFromMap(cur, "trafficReset"),

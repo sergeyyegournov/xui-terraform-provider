@@ -66,6 +66,9 @@ func (r *vlessClientResource) Schema(_ context.Context, _ resource.SchemaRequest
 				MarkdownDescription: "Static VLESS UUID. If empty, one is generated on create.",
 				Optional:            true,
 				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"flow": schema.StringAttribute{
 				MarkdownDescription: "e.g. `xtls-rprx-vision` for XTLS Vision.",
@@ -245,7 +248,11 @@ func (r *vlessClientResource) Read(ctx context.Context, req resource.ReadRequest
 	uid := clientUUID(cm)
 	state.ID = types.StringValue(uid)
 	state.UUID = types.StringValue(uid)
-	if v, ok := cm["flow"].(string); ok {
+	// Optional fields without a default are modelled as null when unset.
+	// The panel serves them as "" regardless of whether the user provided
+	// them, so we re-project empty strings to null to avoid spurious
+	// "null -> ''" diffs against the user's config.
+	if v, ok := cm["flow"].(string); ok && v != "" {
 		state.Flow = types.StringValue(v)
 	} else {
 		state.Flow = types.StringNull()
@@ -257,12 +264,12 @@ func (r *vlessClientResource) Read(ctx context.Context, req resource.ReadRequest
 	state.TotalGB = types.Int64Value(int64FromAny(cm["totalGB"]))
 	state.ExpiryTime = types.Int64Value(int64FromAny(cm["expiryTime"]))
 	state.TgID = types.Int64Value(int64FromAny(cm["tgId"]))
-	if v, ok := cm["subId"].(string); ok {
+	if v, ok := cm["subId"].(string); ok && v != "" {
 		state.SubID = types.StringValue(v)
 	} else {
 		state.SubID = types.StringNull()
 	}
-	if v, ok := cm["comment"].(string); ok {
+	if v, ok := cm["comment"].(string); ok && v != "" {
 		state.Comment = types.StringValue(v)
 	} else {
 		state.Comment = types.StringNull()
@@ -447,9 +454,9 @@ func (r *vlessClientResource) upsertVLESSClientViaInboundUpdate(inboundID int64,
 		"listen":         stringFromMap(inbound, "listen"),
 		"port":           port,
 		"protocol":       stringFromMap(inbound, "protocol"),
-		"settings":       string(settingsRaw),
-		"streamSettings": stringFromMap(inbound, "streamSettings"),
-		"sniffing":       stringFromMap(inbound, "sniffing"),
+		"settings":       canonicalizeInboundSettings(string(settingsRaw)),
+		"streamSettings": compactJSON(stringFromMap(inbound, "streamSettings")),
+		"sniffing":       compactJSON(stringFromMap(inbound, "sniffing")),
 		"enable":         boolFromMap(inbound, "enable"),
 		"expiryTime":     int64FromMap(inbound, "expiryTime"),
 		"trafficReset":   stringFromMap(inbound, "trafficReset"),

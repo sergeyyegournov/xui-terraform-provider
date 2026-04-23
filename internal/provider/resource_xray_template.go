@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
@@ -41,7 +42,8 @@ func (r *xrayTemplateResource) Schema(_ context.Context, _ resource.SchemaReques
 			},
 			"json": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "Full Xray template JSON body sent to 3x-ui `POST /panel/xray/update` as `xraySetting`.",
+				CustomType:          jsontypes.NormalizedType{},
+				MarkdownDescription: "Full Xray template JSON body sent to 3x-ui `POST /panel/xray/update` as `xraySetting`. The attribute uses semantic JSON equality, so whitespace and key-order differences between the config and the panel's stored value are not reported as drift.",
 			},
 			"restart_xray": schema.BoolAttribute{
 				Optional:            true,
@@ -66,9 +68,9 @@ func (r *xrayTemplateResource) Configure(_ context.Context, req resource.Configu
 }
 
 type xrayTemplateModel struct {
-	ID          types.String `tfsdk:"id"`
-	JSON        types.String `tfsdk:"json"`
-	RestartXray types.Bool   `tfsdk:"restart_xray"`
+	ID          types.String       `tfsdk:"id"`
+	JSON        jsontypes.Normalized `tfsdk:"json"`
+	RestartXray types.Bool         `tfsdk:"restart_xray"`
 }
 
 func (r *xrayTemplateResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -81,7 +83,7 @@ func (r *xrayTemplateResource) Create(ctx context.Context, req resource.CreateRe
 		resp.Diagnostics.AddError("Invalid json", err.Error())
 		return
 	}
-	if err := r.client.UpdateXrayTemplate(plan.JSON.ValueString()); err != nil {
+	if err := r.client.UpdateXrayTemplate(compactJSON(plan.JSON.ValueString())); err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
@@ -92,6 +94,10 @@ func (r *xrayTemplateResource) Create(ctx context.Context, req resource.CreateRe
 		}
 	}
 	plan.ID = types.StringValue("xray-template")
+	// plan.JSON is stored verbatim; the attribute uses jsontypes.Normalized
+	// which compares values by semantic JSON equality, so whitespace /
+	// ordering differences between the user's config and what the panel
+	// serves on refresh don't surface as drift.
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
@@ -106,7 +112,7 @@ func (r *xrayTemplateResource) Read(ctx context.Context, req resource.ReadReques
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	state.JSON = types.StringValue(raw)
+	state.JSON = jsontypes.NewNormalizedValue(raw)
 	if state.ID.IsNull() || state.ID.ValueString() == "" {
 		state.ID = types.StringValue("xray-template")
 	}
@@ -123,7 +129,7 @@ func (r *xrayTemplateResource) Update(ctx context.Context, req resource.UpdateRe
 		resp.Diagnostics.AddError("Invalid json", err.Error())
 		return
 	}
-	if err := r.client.UpdateXrayTemplate(plan.JSON.ValueString()); err != nil {
+	if err := r.client.UpdateXrayTemplate(compactJSON(plan.JSON.ValueString())); err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
@@ -153,7 +159,7 @@ func (r *xrayTemplateResource) ImportState(ctx context.Context, _ resource.Impor
 	}
 	state := xrayTemplateModel{
 		ID:          types.StringValue("xray-template"),
-		JSON:        types.StringValue(raw),
+		JSON:        jsontypes.NewNormalizedValue(raw),
 		RestartXray: types.BoolValue(false),
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)

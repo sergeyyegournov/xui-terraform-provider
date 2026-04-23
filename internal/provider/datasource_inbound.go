@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -45,12 +46,14 @@ func (d *inboundDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 				Computed:            true,
 			},
 			"stream_settings": schema.StringAttribute{
-				MarkdownDescription: "Raw `streamSettings` JSON string.",
+				MarkdownDescription: "Raw `streamSettings` JSON string. Compared with JSON semantic equality.",
 				Computed:            true,
+				CustomType:          jsontypes.NormalizedType{},
 			},
 			"sniffing": schema.StringAttribute{
-				MarkdownDescription: "Raw `sniffing` JSON string.",
+				MarkdownDescription: "Raw `sniffing` JSON string. Compared with JSON semantic equality.",
 				Computed:            true,
+				CustomType:          jsontypes.NormalizedType{},
 			},
 			"json": schema.StringAttribute{
 				MarkdownDescription: "Full inbound object as JSON (for advanced fields).",
@@ -79,10 +82,10 @@ type inboundDSModel struct {
 	Port           types.Int64  `tfsdk:"port"`
 	Protocol       types.String `tfsdk:"protocol"`
 	Enable         types.Bool   `tfsdk:"enable"`
-	Settings       types.String `tfsdk:"settings"`
-	StreamSettings types.String `tfsdk:"stream_settings"`
-	Sniffing       types.String `tfsdk:"sniffing"`
-	JSON           types.String `tfsdk:"json"`
+	Settings       types.String         `tfsdk:"settings"`
+	StreamSettings jsontypes.Normalized `tfsdk:"stream_settings"`
+	Sniffing       jsontypes.Normalized `tfsdk:"sniffing"`
+	JSON           types.String         `tfsdk:"json"`
 }
 
 func (d *inboundDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
@@ -118,8 +121,8 @@ func fillInboundDSModelFromRaw(raw []byte, cfg *inboundDSModel) error {
 	cfg.Protocol = types.StringValue(stringFromMap(m, "protocol"))
 	cfg.Enable = types.BoolValue(boolFromMap(m, "enable"))
 	cfg.Settings = types.StringValue(stringFromMap(m, "settings"))
-	cfg.StreamSettings = types.StringValue(stringFromMap(m, "streamSettings"))
-	cfg.Sniffing = types.StringValue(stringFromMap(m, "sniffing"))
+	cfg.StreamSettings = jsontypes.NewNormalizedValue(stringFromMap(m, "streamSettings"))
+	cfg.Sniffing = jsontypes.NewNormalizedValue(stringFromMap(m, "sniffing"))
 	cfg.JSON = types.StringValue(string(raw))
 	return nil
 }

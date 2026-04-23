@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 const inboundDummyClientEmail = "__xui_tf_do_not_delete__"
@@ -44,20 +45,6 @@ func stringFromMap(m map[string]any, key string) string {
 	}
 	s, _ := v.(string)
 	return s
-}
-
-// compactJSON re-encodes a JSON string into compact form so that
-// semantically identical objects always produce the same string.
-func compactJSON(s string) string {
-	var v any
-	if err := json.Unmarshal([]byte(s), &v); err != nil {
-		return s
-	}
-	out, err := json.Marshal(v)
-	if err != nil {
-		return s
-	}
-	return string(out)
 }
 
 func int64FromMap(m map[string]any, key string) int64 {
@@ -154,14 +141,24 @@ func clientUUID(cm map[string]any) string {
 	return id
 }
 
-// settingsIgnoreClientsPlanModifier suppresses diffs on the "settings"
-// attribute when the only change is the "clients" array (managed by
-// xui_vless_client). It compares config vs state after stripping "clients"
-// from both; if the remaining keys are equal it keeps the state value.
+// settingsIgnoreClientsPlanModifier projects the planned value of the
+// inbound `settings` attribute into the exact canonical form that the
+// resource will store in state after apply. Concretely, on Update it
+// takes the non-`clients` keys from the user's plan and grafts them onto
+// the current state's `clients` array (which the provider manages via
+// xui_vless_client and an internal sentinel client), then canonicalizes
+// the result. This gives Terraform a planned value that is byte-equal to
+// what the post-apply refresh will observe, which is what the framework's
+// "inconsistent result after apply" check requires.
+//
+// On Create (state is null) the modifier is a no-op: the Create handler
+// stores the user's original value verbatim, and the subsequent Read
+// auto-refresh canonicalizes state (adding the sentinel). From the next
+// plan onwards the modifier takes over.
 type settingsIgnoreClientsPlanModifier struct{}
 
 func (m settingsIgnoreClientsPlanModifier) Description(_ context.Context) string {
-	return "Ignores the clients array inside settings JSON so clients can be managed separately."
+	return "Projects the clients array from current state onto the planned settings JSON so user-managed fields don't fight with the panel-managed client list."
 }
 
 func (m settingsIgnoreClientsPlanModifier) MarkdownDescription(ctx context.Context) string {
@@ -172,27 +169,11 @@ func (m settingsIgnoreClientsPlanModifier) PlanModifyString(_ context.Context, r
 	if req.StateValue.IsNull() || req.PlanValue.IsNull() || req.PlanValue.IsUnknown() {
 		return
 	}
-	planJSON := compactJSON(req.PlanValue.ValueString())
-	stateJSON := req.StateValue.ValueString()
-
-	if stripClients(planJSON) == stripClients(stateJSON) {
-		resp.PlanValue = req.StateValue
-	}
-}
-
-// stripClients removes the "clients" key from a JSON object string and
-// returns the compact remainder for comparison purposes.
-func stripClients(s string) string {
-	var m map[string]any
-	if err := json.Unmarshal([]byte(s), &m); err != nil {
-		return s
-	}
-	delete(m, "clients")
-	out, err := json.Marshal(m)
+	projected, err := mergeInboundSettingsPreservingClients(req.StateValue.ValueString(), req.PlanValue.ValueString())
 	if err != nil {
-		return s
+		return
 	}
-	return string(out)
+	resp.PlanValue = types.StringValue(canonicalizeInboundSettings(projected))
 }
 
 func settingsIgnoreClients() planmodifier.String {

@@ -3,6 +3,7 @@ package provider
 import (
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -19,8 +20,8 @@ func TestInboundUserManagedFieldsChanged(t *testing.T) {
 		TrafficReset:   types.StringValue("never"),
 		Total:          types.Int64Value(0),
 		Settings:       types.StringValue(`{"clients":[{"id":"1"}],"decryption":"none"}`),
-		StreamSettings: types.StringValue(`{"network":"tcp"}`),
-		Sniffing:       types.StringValue(`{"enabled":true}`),
+		StreamSettings: jsontypes.NewNormalizedValue(`{"network":"tcp"}`),
+		Sniffing:       jsontypes.NewNormalizedValue(`{"enabled":true}`),
 	}
 
 	sameDifferentFormatting := base
