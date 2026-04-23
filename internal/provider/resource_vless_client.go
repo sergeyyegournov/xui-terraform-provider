@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
@@ -72,6 +73,8 @@ func (r *vlessClientResource) Schema(_ context.Context, _ resource.SchemaRequest
 			"flow": schema.StringAttribute{
 				MarkdownDescription: "e.g. `xtls-rprx-vision` for XTLS Vision.",
 				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
 			},
 			"enable": schema.BoolAttribute{
 				Optional: true,
@@ -102,9 +105,13 @@ func (r *vlessClientResource) Schema(_ context.Context, _ resource.SchemaRequest
 			},
 			"sub_id": schema.StringAttribute{
 				Optional: true,
+				Computed: true,
+				Default:  stringdefault.StaticString(""),
 			},
 			"comment": schema.StringAttribute{
 				Optional: true,
+				Computed: true,
+				Default:  stringdefault.StaticString(""),
 			},
 			"reset": schema.Int64Attribute{
 				Optional: true,
@@ -231,14 +238,10 @@ func (r *vlessClientResource) Read(ctx context.Context, req resource.ReadRequest
 	uid := clientUUID(cm)
 	state.ID = types.StringValue(uid)
 	state.UUID = types.StringValue(uid)
-	// Optional fields without a default are modelled as null when unset.
-	// The panel serves them as "" regardless of whether the user provided
-	// them, so we re-project empty strings to null to avoid spurious
-	// "null -> ''" diffs against the user's config.
 	if v, ok := cm["flow"].(string); ok && v != "" {
 		state.Flow = types.StringValue(v)
 	} else {
-		state.Flow = types.StringNull()
+		state.Flow = types.StringValue("")
 	}
 	if v, ok := cm["enable"].(bool); ok {
 		state.Enable = types.BoolValue(v)
@@ -250,12 +253,12 @@ func (r *vlessClientResource) Read(ctx context.Context, req resource.ReadRequest
 	if v, ok := cm["subId"].(string); ok && v != "" {
 		state.SubID = types.StringValue(v)
 	} else {
-		state.SubID = types.StringNull()
+		state.SubID = types.StringValue("")
 	}
 	if v, ok := cm["comment"].(string); ok && v != "" {
 		state.Comment = types.StringValue(v)
 	} else {
-		state.Comment = types.StringNull()
+		state.Comment = types.StringValue("")
 	}
 	state.Reset = types.Int64Value(int64FromAny(cm["reset"]))
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)

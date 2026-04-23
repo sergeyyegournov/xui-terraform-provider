@@ -250,3 +250,67 @@ resource "xui_vless_client" "test" {
 }
 `, providerConfig(), remark, port, email, limitIP)
 }
+
+// TestAccVLESSClient_emptyStringsNoDrift verifies that explicit empty strings
+// for optional fields are treated as equivalent to panel-returned null/empty
+// normalization and do not cause perpetual no-op updates.
+func TestAccVLESSClient_emptyStringsNoDrift(t *testing.T) {
+	testAccPreCheck(t)
+	port := nextPort()
+	inboundRemark := fmt.Sprintf("tf-acc-vlessempty-%d", port)
+	email := fmt.Sprintf("tf-acc-userempty-%d", port)
+
+	cfg := testAccVLESSClientEmptyStringsConfig(inboundRemark, port, email)
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories,
+		CheckDestroy:             checkInboundDestroyed,
+		Steps: []resource.TestStep{
+			{
+				Config: cfg,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("xui_vless_client.test", "flow", "xtls-rprx-vision"),
+					resource.TestCheckResourceAttr("xui_vless_client.test", "sub_id", ""),
+					resource.TestCheckResourceAttr("xui_vless_client.test", "comment", ""),
+				),
+			},
+			{
+				Config: cfg,
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+			},
+		},
+	})
+}
+
+func testAccVLESSClientEmptyStringsConfig(remark string, port int, email string) string {
+	return fmt.Sprintf(`%s
+
+resource "xui_inbound" "test" {
+  protocol = "vless"
+  remark   = %q
+  port     = %d
+  settings = jsonencode({
+    clients    = []
+    decryption = "none"
+  })
+  stream_settings = jsonencode({
+    network  = "tcp"
+    security = "none"
+    tcpSettings = {
+      acceptProxyProtocol = false
+      header              = { type = "none" }
+    }
+  })
+  sniffing = "{}"
+}
+
+resource "xui_vless_client" "test" {
+  inbound_id = xui_inbound.test.id
+  email      = %q
+  flow       = "xtls-rprx-vision"
+  sub_id     = ""
+  comment    = ""
+}
+`, providerConfig(), remark, port, email)
+}
