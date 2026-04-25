@@ -6,7 +6,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -47,8 +46,7 @@ func (r *xrayTemplateResource) Schema(_ context.Context, _ resource.SchemaReques
 			},
 			"restart_xray": schema.BoolAttribute{
 				Optional:            true,
-				Computed:            true,
-				Default:             booldefault.StaticBool(false),
+				WriteOnly:           true,
 				MarkdownDescription: "If true, call `POST /panel/api/server/restartXrayService` after updating template.",
 			},
 		},
@@ -87,13 +85,14 @@ func (r *xrayTemplateResource) Create(ctx context.Context, req resource.CreateRe
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	if plan.RestartXray.ValueBool() {
+	if !plan.RestartXray.IsNull() && plan.RestartXray.ValueBool() {
 		if err := r.client.RestartXrayService(); err != nil {
 			resp.Diagnostics.AddError("API error", err.Error())
 			return
 		}
 	}
 	plan.ID = types.StringValue("xray-template")
+	plan.RestartXray = types.BoolNull()
 	// plan.JSON is stored verbatim; the attribute uses jsontypes.Normalized
 	// which compares values by semantic JSON equality, so whitespace /
 	// ordering differences between the user's config and what the panel
@@ -113,6 +112,7 @@ func (r *xrayTemplateResource) Read(ctx context.Context, req resource.ReadReques
 		return
 	}
 	state.JSON = jsontypes.NewNormalizedValue(raw)
+	state.RestartXray = types.BoolNull()
 	if state.ID.IsNull() || state.ID.ValueString() == "" {
 		state.ID = types.StringValue("xray-template")
 	}
@@ -133,13 +133,14 @@ func (r *xrayTemplateResource) Update(ctx context.Context, req resource.UpdateRe
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	if plan.RestartXray.ValueBool() {
+	if !plan.RestartXray.IsNull() && plan.RestartXray.ValueBool() {
 		if err := r.client.RestartXrayService(); err != nil {
 			resp.Diagnostics.AddError("API error", err.Error())
 			return
 		}
 	}
 	plan.ID = types.StringValue("xray-template")
+	plan.RestartXray = types.BoolNull()
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
@@ -160,7 +161,7 @@ func (r *xrayTemplateResource) ImportState(ctx context.Context, _ resource.Impor
 	state := xrayTemplateModel{
 		ID:          types.StringValue("xray-template"),
 		JSON:        jsontypes.NewNormalizedValue(raw),
-		RestartXray: types.BoolValue(false),
+		RestartXray: types.BoolNull(),
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }

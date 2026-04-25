@@ -34,7 +34,6 @@ func TestAccXrayTemplate_basic(t *testing.T) {
 				Config: testAccXrayTemplateConfig(templateJSON),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("xui_xray_template.test", "id", "xray-template"),
-					resource.TestCheckResourceAttr("xui_xray_template.test", "restart_xray", "false"),
 					resource.TestCheckResourceAttrSet("xui_xray_template.test", "json"),
 				),
 			},
