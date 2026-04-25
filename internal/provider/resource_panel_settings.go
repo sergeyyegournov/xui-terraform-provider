@@ -488,8 +488,7 @@ func (r *panelSettingsResource) Schema(_ context.Context, _ resource.SchemaReque
 			"restart_panel": schema.BoolAttribute{
 				MarkdownDescription: "If true, restart the panel after applying changes. Required for web listen/port/cert changes to take effect.",
 				Optional:            true,
-				Computed:            true,
-				Default:             booldefault.StaticBool(false),
+				WriteOnly:           true,
 			},
 		},
 	}
@@ -757,12 +756,13 @@ func (r *panelSettingsResource) Create(ctx context.Context, req resource.CreateR
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	if plan.RestartPanel.ValueBool() {
+	if !plan.RestartPanel.IsNull() && plan.RestartPanel.ValueBool() {
 		if err := r.client.RestartPanel(); err != nil {
 			resp.Diagnostics.AddWarning("Panel restart failed", fmt.Sprintf("Settings were saved but panel restart failed: %s", err.Error()))
 		}
 	}
 	plan.ID = types.StringValue("panel-settings")
+	plan.RestartPanel = types.BoolNull()
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
@@ -778,6 +778,7 @@ func (r *panelSettingsResource) Read(ctx context.Context, req resource.ReadReque
 		return
 	}
 	r.apiToModel(m, &state)
+	state.RestartPanel = types.BoolNull()
 	if state.ID.IsNull() || state.ID.ValueString() == "" {
 		state.ID = types.StringValue("panel-settings")
 	}
@@ -795,12 +796,13 @@ func (r *panelSettingsResource) Update(ctx context.Context, req resource.UpdateR
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
-	if plan.RestartPanel.ValueBool() {
+	if !plan.RestartPanel.IsNull() && plan.RestartPanel.ValueBool() {
 		if err := r.client.RestartPanel(); err != nil {
 			resp.Diagnostics.AddWarning("Panel restart failed", fmt.Sprintf("Settings were saved but panel restart failed: %s", err.Error()))
 		}
 	}
 	plan.ID = types.StringValue("panel-settings")
+	plan.RestartPanel = types.BoolNull()
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
@@ -816,7 +818,7 @@ func (r *panelSettingsResource) ImportState(ctx context.Context, _ resource.Impo
 	}
 	var state panelSettingsModel
 	state.ID = types.StringValue("panel-settings")
-	state.RestartPanel = types.BoolValue(false)
+	state.RestartPanel = types.BoolNull()
 	r.apiToModel(m, &state)
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
