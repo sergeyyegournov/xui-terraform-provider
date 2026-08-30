@@ -27,10 +27,15 @@ func accClientCommonDefaultsChecks(resourceName string) resource.TestCheckFunc {
 	return resource.ComposeAggregateTestCheckFunc(
 		resource.TestCheckResourceAttr(resourceName, "enable", "true"),
 		resource.TestCheckResourceAttr(resourceName, "limit_ip", "0"),
+		resource.TestCheckResourceAttr(resourceName, "limit_hwid", "0"),
 		resource.TestCheckResourceAttr(resourceName, "total_gb", "0"),
 		resource.TestCheckResourceAttr(resourceName, "expiry_time", "0"),
 		resource.TestCheckResourceAttr(resourceName, "tg_id", "0"),
 		resource.TestCheckResourceAttr(resourceName, "reset", "0"),
+		resource.TestCheckResourceAttr(resourceName, "reset_day", "0"),
+		resource.TestCheckResourceAttr(resourceName, "reset_max", "0"),
+		resource.TestCheckResourceAttr(resourceName, "traffic_reset", "never"),
+		resource.TestCheckResourceAttr(resourceName, "traffic_reset_day", "1"),
 		resource.TestCheckResourceAttr(resourceName, "comment", ""),
 	)
 }

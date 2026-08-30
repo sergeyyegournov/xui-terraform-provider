@@ -49,7 +49,7 @@ func (r *inboundResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				},
 			},
 			"protocol": schema.StringAttribute{
-				MarkdownDescription: "Xray inbound protocol: `vless`, `vmess`, `trojan`, `shadowsocks`, `mixed`, etc. (same as export `protocol`).",
+				MarkdownDescription: "Inbound protocol: `vless`, `vmess`, `trojan`, `shadowsocks`, `hysteria`, `wireguard`, `amneziawg`, `mixed`, etc. (same as export `protocol`).",
 				Required:            true,
 			},
 			"remark": schema.StringAttribute{
@@ -85,6 +85,18 @@ func (r *inboundResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				Optional:            true,
 				Computed:            true,
 				Default:             stringdefault.StaticString("never"),
+			},
+			"traffic_reset_day": schema.Int64Attribute{
+				MarkdownDescription: "Day of month for monthly inbound traffic reset (`trafficResetDay`; 1–31).",
+				Optional:            true,
+				Computed:            true,
+				Default:             int64default.StaticInt64(1),
+			},
+			"disable_flow": schema.BoolAttribute{
+				MarkdownDescription: "When true, opt this inbound out of automatic XTLS Vision flow (`disableFlow`).",
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(false),
 			},
 			"total": schema.Int64Attribute{
 				MarkdownDescription: "Total traffic limit for the inbound in bytes (0 = unlimited); export `total`.",
@@ -149,21 +161,23 @@ func (r *inboundResource) Configure(_ context.Context, req resource.ConfigureReq
 }
 
 type inboundModel struct {
-	ID             types.Int64          `tfsdk:"id"`
-	Protocol       types.String         `tfsdk:"protocol"`
-	Remark         types.String         `tfsdk:"remark"`
-	Listen         types.String         `tfsdk:"listen"`
-	Port           types.Int64          `tfsdk:"port"`
-	Enable         types.Bool           `tfsdk:"enable"`
-	ExpiryTime     types.Int64          `tfsdk:"expiry_time"`
-	TrafficReset   types.String         `tfsdk:"traffic_reset"`
-	Total          types.Int64          `tfsdk:"total"`
-	Settings       types.String         `tfsdk:"settings"`
-	StreamSettings jsontypes.Normalized `tfsdk:"stream_settings"`
-	Sniffing       jsontypes.Normalized `tfsdk:"sniffing"`
-	Tag            types.String         `tfsdk:"tag"`
-	PublicIPv4     types.String         `tfsdk:"public_ipv4"`
-	PublicIPv6     types.String         `tfsdk:"public_ipv6"`
+	ID              types.Int64          `tfsdk:"id"`
+	Protocol        types.String         `tfsdk:"protocol"`
+	Remark          types.String         `tfsdk:"remark"`
+	Listen          types.String         `tfsdk:"listen"`
+	Port            types.Int64          `tfsdk:"port"`
+	Enable          types.Bool           `tfsdk:"enable"`
+	ExpiryTime      types.Int64          `tfsdk:"expiry_time"`
+	TrafficReset    types.String         `tfsdk:"traffic_reset"`
+	TrafficResetDay types.Int64          `tfsdk:"traffic_reset_day"`
+	DisableFlow     types.Bool           `tfsdk:"disable_flow"`
+	Total           types.Int64          `tfsdk:"total"`
+	Settings        types.String         `tfsdk:"settings"`
+	StreamSettings  jsontypes.Normalized `tfsdk:"stream_settings"`
+	Sniffing        jsontypes.Normalized `tfsdk:"sniffing"`
+	Tag             types.String         `tfsdk:"tag"`
+	PublicIPv4      types.String         `tfsdk:"public_ipv4"`
+	PublicIPv6      types.String         `tfsdk:"public_ipv6"`
 }
 
 func (r *inboundResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -185,19 +199,21 @@ func (r *inboundResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 	payload := map[string]any{
-		"remark":         plan.Remark.ValueString(),
-		"listen":         plan.Listen.ValueString(),
-		"port":           plan.Port.ValueInt64(),
-		"protocol":       plan.Protocol.ValueString(),
-		"settings":       canonicalizeInboundSettings(plan.Settings.ValueString()),
-		"streamSettings": compactJSON(plan.StreamSettings.ValueString()),
-		"sniffing":       compactJSON(plan.Sniffing.ValueString()),
-		"enable":         plan.Enable.ValueBool(),
-		"expiryTime":     plan.ExpiryTime.ValueInt64(),
-		"trafficReset":   plan.TrafficReset.ValueString(),
-		"total":          plan.Total.ValueInt64(),
-		"up":             0,
-		"down":           0,
+		"remark":          plan.Remark.ValueString(),
+		"listen":          plan.Listen.ValueString(),
+		"port":            plan.Port.ValueInt64(),
+		"protocol":        plan.Protocol.ValueString(),
+		"settings":        canonicalizeInboundSettings(plan.Settings.ValueString()),
+		"streamSettings":  compactJSON(plan.StreamSettings.ValueString()),
+		"sniffing":        compactJSON(plan.Sniffing.ValueString()),
+		"enable":          plan.Enable.ValueBool(),
+		"expiryTime":      plan.ExpiryTime.ValueInt64(),
+		"trafficReset":    plan.TrafficReset.ValueString(),
+		"trafficResetDay": plan.TrafficResetDay.ValueInt64(),
+		"disableFlow":     plan.DisableFlow.ValueBool(),
+		"total":           plan.Total.ValueInt64(),
+		"up":              0,
+		"down":            0,
 	}
 	raw, err := r.client.AddInbound(payload)
 	if err != nil {
@@ -266,6 +282,12 @@ func (r *inboundResource) Read(ctx context.Context, req resource.ReadRequest, re
 	exp, _ := intFromMap(m, "expiryTime")
 	state.ExpiryTime = types.Int64Value(int64(exp))
 	state.TrafficReset = types.StringValue(stringFromMap(m, "trafficReset"))
+	trDay, _ := intFromMap(m, "trafficResetDay")
+	if trDay == 0 {
+		trDay = 1
+	}
+	state.TrafficResetDay = types.Int64Value(int64(trDay))
+	state.DisableFlow = types.BoolValue(boolFromMap(m, "disableFlow"))
 	state.Total = types.Int64Value(int64FromMap(m, "total"))
 	state.Settings = types.StringValue(canonicalizeInboundSettings(jsonStringFromMap(m, "settings")))
 	state.StreamSettings = jsontypes.NewNormalizedValue(jsonStringFromMap(m, "streamSettings"))
@@ -338,21 +360,23 @@ func (r *inboundResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 	payload := map[string]any{
-		"id":             int(state.ID.ValueInt64()),
-		"remark":         plan.Remark.ValueString(),
-		"listen":         plan.Listen.ValueString(),
-		"port":           plan.Port.ValueInt64(),
-		"protocol":       plan.Protocol.ValueString(),
-		"settings":       canonicalizeInboundSettings(settingsMerged),
-		"streamSettings": compactJSON(plan.StreamSettings.ValueString()),
-		"sniffing":       compactJSON(plan.Sniffing.ValueString()),
-		"enable":         plan.Enable.ValueBool(),
-		"expiryTime":     plan.ExpiryTime.ValueInt64(),
-		"trafficReset":   plan.TrafficReset.ValueString(),
-		"total":          plan.Total.ValueInt64(),
-		"up":             int64FromMap(cur, "up"),
-		"down":           int64FromMap(cur, "down"),
-		"allTime":        int64FromMap(cur, "allTime"),
+		"id":              int(state.ID.ValueInt64()),
+		"remark":          plan.Remark.ValueString(),
+		"listen":          plan.Listen.ValueString(),
+		"port":            plan.Port.ValueInt64(),
+		"protocol":        plan.Protocol.ValueString(),
+		"settings":        canonicalizeInboundSettings(settingsMerged),
+		"streamSettings":  compactJSON(plan.StreamSettings.ValueString()),
+		"sniffing":        compactJSON(plan.Sniffing.ValueString()),
+		"enable":          plan.Enable.ValueBool(),
+		"expiryTime":      plan.ExpiryTime.ValueInt64(),
+		"trafficReset":    plan.TrafficReset.ValueString(),
+		"trafficResetDay": plan.TrafficResetDay.ValueInt64(),
+		"disableFlow":     plan.DisableFlow.ValueBool(),
+		"total":           plan.Total.ValueInt64(),
+		"up":              int64FromMap(cur, "up"),
+		"down":            int64FromMap(cur, "down"),
+		"allTime":         int64FromMap(cur, "allTime"),
 	}
 	if _, err := r.client.UpdateInbound(int(state.ID.ValueInt64()), payload); err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
@@ -365,6 +389,8 @@ func (r *inboundResource) Update(ctx context.Context, req resource.UpdateRequest
 	state.Enable = plan.Enable
 	state.ExpiryTime = plan.ExpiryTime
 	state.TrafficReset = plan.TrafficReset
+	state.TrafficResetDay = plan.TrafficResetDay
+	state.DisableFlow = plan.DisableFlow
 	state.Total = plan.Total
 	state.Settings = types.StringValue(canonicalizeInboundSettings(settingsMerged))
 	state.StreamSettings = plan.StreamSettings
@@ -407,6 +433,12 @@ func inboundUserManagedFieldsChanged(plan, state inboundModel) bool {
 		return true
 	}
 	if plan.TrafficReset.ValueString() != state.TrafficReset.ValueString() {
+		return true
+	}
+	if plan.TrafficResetDay.ValueInt64() != state.TrafficResetDay.ValueInt64() {
+		return true
+	}
+	if plan.DisableFlow.ValueBool() != state.DisableFlow.ValueBool() {
 		return true
 	}
 	if plan.Total.ValueInt64() != state.Total.ValueInt64() {

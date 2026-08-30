@@ -2,42 +2,97 @@ package provider
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/syegournov/xkeen-gen/terraform-provider-xui/internal/xui"
 )
 
-func planToPanelClientInput(email string, enable types.Bool, limitIP, totalGB, expiry, tgID, reset types.Int64, flow, subID, comment types.String, id, password, auth, security string) xui.PanelClientInput {
+// panelClientPlan holds the shared Terraform values used to build a panel client payload.
+type panelClientPlan struct {
+	Email           string
+	Enable          types.Bool
+	LimitIP         types.Int64
+	LimitHwid       types.Int64
+	TotalGB         types.Int64
+	ExpiryTime      types.Int64
+	TgID            types.Int64
+	Reset           types.Int64
+	ResetDay        types.Int64
+	ResetMax        types.Int64
+	TrafficReset    types.String
+	TrafficResetDay types.Int64
+	Flow            types.String
+	SubID           types.String
+	Comment         types.String
+	ID              string
+	Password        string
+	Auth            string
+	Security        string
+	PrivateKey      string
+	PublicKey       string
+	PreSharedKey    string
+	AllowedIPs      []string
+	KeepAlive       types.Int64
+	ForwardedPorts  string
+}
+
+func planToPanelClientInput(p panelClientPlan) xui.PanelClientInput {
 	c := xui.PanelClientInput{
-		Email:      email,
-		Enable:     enable.ValueBool(),
-		LimitIP:    limitIP.ValueInt64(),
-		TotalGB:    totalGB.ValueInt64(),
-		ExpiryTime: expiry.ValueInt64(),
-		TgID:       tgID.ValueInt64(),
-		Reset:      reset.ValueInt64(),
+		Email:           p.Email,
+		Enable:          p.Enable.ValueBool(),
+		LimitIP:         p.LimitIP.ValueInt64(),
+		LimitHwid:       p.LimitHwid.ValueInt64(),
+		TotalGB:         p.TotalGB.ValueInt64(),
+		ExpiryTime:      p.ExpiryTime.ValueInt64(),
+		TgID:            p.TgID.ValueInt64(),
+		Reset:           p.Reset.ValueInt64(),
+		ResetDay:        p.ResetDay.ValueInt64(),
+		ResetMax:        p.ResetMax.ValueInt64(),
+		TrafficResetDay: p.TrafficResetDay.ValueInt64(),
 	}
-	if id != "" {
-		c.ID = id
+	if !p.TrafficReset.IsNull() && p.TrafficReset.ValueString() != "" {
+		c.TrafficReset = p.TrafficReset.ValueString()
 	}
-	if password != "" {
-		c.Password = password
+	if p.ID != "" {
+		c.ID = p.ID
 	}
-	if auth != "" {
-		c.Auth = auth
+	if p.Password != "" {
+		c.Password = p.Password
 	}
-	if security != "" {
-		c.Security = security
+	if p.Auth != "" {
+		c.Auth = p.Auth
 	}
-	if !flow.IsNull() {
-		c.Flow = flow.ValueString()
+	if p.Security != "" {
+		c.Security = p.Security
 	}
-	if !subID.IsNull() && subID.ValueString() != "" {
-		c.SubID = subID.ValueString()
+	if !p.Flow.IsNull() {
+		c.Flow = p.Flow.ValueString()
 	}
-	if !comment.IsNull() {
-		c.Comment = comment.ValueString()
+	if !p.SubID.IsNull() && p.SubID.ValueString() != "" {
+		c.SubID = p.SubID.ValueString()
+	}
+	if !p.Comment.IsNull() {
+		c.Comment = p.Comment.ValueString()
+	}
+	if p.PrivateKey != "" {
+		c.PrivateKey = p.PrivateKey
+	}
+	if p.PublicKey != "" {
+		c.PublicKey = p.PublicKey
+	}
+	if p.PreSharedKey != "" {
+		c.PreSharedKey = p.PreSharedKey
+	}
+	if len(p.AllowedIPs) > 0 {
+		c.AllowedIPs = p.AllowedIPs
+	}
+	if !p.KeepAlive.IsNull() {
+		c.KeepAlive = p.KeepAlive.ValueInt64()
+	}
+	if p.ForwardedPorts != "" {
+		c.ForwardedPorts = p.ForwardedPorts
 	}
 	return c
 }
@@ -80,19 +135,31 @@ func createPanelClient(cli *xui.Client, email string, inboundID int, input xui.P
 	return rec, nil
 }
 
-func applyCommonClientFields(enable *types.Bool, limitIP, totalGB, expiry, tgID, reset *types.Int64, subID, comment *types.String, rec xui.PanelClientRecord) {
+func applyCommonClientFields(
+	enable *types.Bool,
+	limitIP, limitHwid, totalGB, expiry, tgID, reset, resetDay, resetMax, trafficResetDay *types.Int64,
+	trafficReset, subID, comment *types.String,
+	rec xui.PanelClientRecord,
+) {
 	*enable = types.BoolValue(rec.Enable)
 	*limitIP = types.Int64Value(rec.LimitIP)
+	*limitHwid = types.Int64Value(rec.LimitHwid)
 	*totalGB = types.Int64Value(rec.TotalGB)
 	*expiry = types.Int64Value(rec.ExpiryTime)
 	*tgID = types.Int64Value(rec.TgID)
 	*subID = types.StringValue(rec.SubID)
 	*comment = types.StringValue(rec.Comment)
 	*reset = types.Int64Value(rec.Reset)
+	*resetDay = types.Int64Value(rec.ResetDay)
+	*resetMax = types.Int64Value(rec.ResetMax)
+	tr := rec.TrafficReset
+	if tr == "" {
+		tr = "never"
+	}
+	*trafficReset = types.StringValue(tr)
+	*trafficResetDay = types.Int64Value(rec.TrafficResetDay)
 }
 
-// panelClientIDFromRecord returns the Terraform `id` for a client record (UUID for
-// VLESS/VMess, password/auth secret for other protocols).
 // finalizeClientSubID sets sub_id from the panel when the plan left it unknown
 // (UseStateForUnknown on create). Explicit plan values are kept.
 func finalizeClientSubID(plan *types.String, rec xui.PanelClientRecord) {
@@ -111,5 +178,23 @@ func panelClientIDFromRecord(rec xui.PanelClientRecord) string {
 	if rec.Auth != "" {
 		return rec.Auth
 	}
+	if rec.PublicKey != "" {
+		return rec.PublicKey
+	}
 	return rec.Email
+}
+
+func splitCSV(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

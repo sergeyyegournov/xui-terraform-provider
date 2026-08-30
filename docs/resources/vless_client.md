@@ -33,11 +33,16 @@ resource "xui_vless_client" "example" {
 - `enable` (Boolean)
 - `expiry_time` (Number) Expiry in milliseconds since Unix epoch (0 = never).
 - `flow` (String) e.g. `xtls-rprx-vision` for XTLS Vision. 3x-ui only persists flow on TLS/Reality-capable VLESS inbounds; other stream settings clear it.
+- `limit_hwid` (Number) Per-client subscription HWID device limit (`limitHwid`; 0 = unlimited).
 - `limit_ip` (Number)
-- `reset` (Number)
+- `reset` (Number) Rolling auto-renew interval in days (`reset`). Ignored when `reset_day` is set.
+- `reset_day` (Number) Calendar renewal day of month 1–31 (`resetDay`). `0` keeps rolling `reset` mode.
+- `reset_max` (Number) Maximum number of auto-renewals (`resetMax`; 0 = unlimited).
 - `sub_id` (String)
 - `tg_id` (Number)
 - `total_gb` (Number) Traffic limit in **bytes** (panel field `totalGB`; 0 = unlimited).
+- `traffic_reset` (String) Per-client traffic reset cycle: `never`, `hourly`, `daily`, `weekly`, or `monthly`.
+- `traffic_reset_day` (Number) Day of month for monthly per-client traffic reset (`trafficResetDay`).
 - `uuid` (String) Static VLESS UUID. If omitted, the panel generates one on create.
 
 ### Read-Only

@@ -33,11 +33,13 @@ resource "xui_panel_settings" "this" {
   smtp_from   = "panel@example.com"
   smtp_to     = "admin@example.com"
 
-  sub_enable               = true
-  sub_port                 = 2096
-  sub_path                 = "/my-sub/"
-  sub_json_auto_detect     = true
-  sub_clash_enable_routing = true
+  sub_enable                     = true
+  sub_port                       = 2096
+  sub_path                       = "/my-sub/"
+  sub_json_auto_detect           = true
+  sub_show_identity_on_all_links = true
+  ip_limit_allowlist             = "10.0.0.0/8"
+  sub_clash_enable_routing       = true
 
   restart_panel = true
 }
@@ -52,6 +54,7 @@ resource "xui_panel_settings" "this" {
 - `expire_diff` (Number) Expiration warning threshold in days.
 - `external_traffic_inform_enable` (Boolean) Enable external traffic reporting.
 - `external_traffic_inform_uri` (String) URI for external traffic reporting.
+- `ip_limit_allowlist` (String) Comma-separated IPs/CIDRs exempt from per-client IP limiting (`ipLimitAllowlist`).
 - `ldap_auto_create` (Boolean) Automatically create clients from LDAP.
 - `ldap_auto_delete` (Boolean) Automatically delete clients removed from LDAP.
 - `ldap_base_dn` (String) LDAP base DN for searches.
@@ -113,6 +116,7 @@ resource "xui_panel_settings" "this" {
 - `sub_json_enable` (Boolean) Enable JSON subscription endpoint.
 - `sub_json_final_mask` (String) JSON subscription FinalMask configuration. Accepts empty/null (unset). Semantic JSON equality avoids whitespace and key-order drift.
 - `sub_json_mux` (String) JSON subscription mux configuration. Accepts empty/null (unset). Semantic JSON equality avoids whitespace and key-order drift.
+- `sub_json_observatory` (String) JSON subscription observatory configuration (`subJsonObservatory`).
 - `sub_json_path` (String) Path for JSON subscription endpoint.
 - `sub_json_rules` (String) JSON subscription routing rules. Accepts empty/null (unset). Semantic JSON equality avoids whitespace and key-order drift.
 - `sub_json_uri` (String) JSON subscription server URI.
@@ -123,6 +127,7 @@ resource "xui_panel_settings" "this" {
 - `sub_port` (Number) Subscription server port.
 - `sub_profile_url` (String) Subscription profile URL.
 - `sub_routing_rules` (String) Subscription global routing rules (plain text, not JSON).
+- `sub_show_identity_on_all_links` (Boolean) Include identity tokens on every subscription link (`subShowIdentityOnAllLinks`).
 - `sub_support_url` (String) Subscription support URL.
 - `sub_theme_dir` (String) Directory for custom subscription theme assets.
 - `sub_title` (String) Subscription title.

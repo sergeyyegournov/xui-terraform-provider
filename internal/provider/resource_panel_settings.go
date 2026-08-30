@@ -89,6 +89,12 @@ func (r *panelSettingsResource) Schema(_ context.Context, _ resource.SchemaReque
 				Computed:            true,
 				Default:             stringdefault.StaticString("127.0.0.1/32,::1/128"),
 			},
+			"ip_limit_allowlist": schema.StringAttribute{
+				MarkdownDescription: "Comma-separated IPs/CIDRs exempt from per-client IP limiting (`ipLimitAllowlist`).",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
+			},
 			"panel_proxy": schema.StringAttribute{
 				MarkdownDescription: "Proxy URL used by the panel for outbound requests (`panelOutbound`).",
 				Optional:            true,
@@ -132,6 +138,12 @@ func (r *panelSettingsResource) Schema(_ context.Context, _ resource.SchemaReque
 				Optional:            true,
 				Computed:            true,
 				Default:             stringdefault.StaticString("gregorian"),
+			},
+			"sub_show_identity_on_all_links": schema.BoolAttribute{
+				MarkdownDescription: "Include identity tokens on every subscription link (`subShowIdentityOnAllLinks`).",
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(false),
 			},
 
 			// Telegram bot
@@ -478,6 +490,12 @@ func (r *panelSettingsResource) Schema(_ context.Context, _ resource.SchemaReque
 				Computed:            true,
 				Default:             stringdefault.StaticString(""),
 			},
+			"sub_json_observatory": schema.StringAttribute{
+				MarkdownDescription: "JSON subscription observatory configuration (`subJsonObservatory`).",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString(""),
+			},
 			"sub_title": schema.StringAttribute{
 				MarkdownDescription: "Subscription title.",
 				Optional:            true,
@@ -720,15 +738,17 @@ type panelSettingsModel struct {
 	WebKeyFile        types.String `tfsdk:"web_key_file"`
 	WebBasePath       types.String `tfsdk:"web_base_path"`
 	TrustedProxyCIDRs types.String `tfsdk:"trusted_proxy_cidrs"`
+	IPLimitAllowlist  types.String `tfsdk:"ip_limit_allowlist"`
 	PanelProxy        types.String `tfsdk:"panel_proxy"`
 	SessionMaxAge     types.Int64  `tfsdk:"session_max_age"`
 
 	// UI
-	PageSize    types.Int64  `tfsdk:"page_size"`
-	ExpireDiff  types.Int64  `tfsdk:"expire_diff"`
-	TrafficDiff types.Int64  `tfsdk:"traffic_diff"`
-	RemarkModel types.String `tfsdk:"remark_model"`
-	Datepicker  types.String `tfsdk:"datepicker"`
+	PageSize                  types.Int64  `tfsdk:"page_size"`
+	ExpireDiff                types.Int64  `tfsdk:"expire_diff"`
+	TrafficDiff               types.Int64  `tfsdk:"traffic_diff"`
+	RemarkModel               types.String `tfsdk:"remark_model"`
+	Datepicker                types.String `tfsdk:"datepicker"`
+	SubShowIdentityOnAllLinks types.Bool   `tfsdk:"sub_show_identity_on_all_links"`
 
 	// Telegram
 	TgBotEnable     types.Bool   `tfsdk:"tg_bot_enable"`
@@ -793,6 +813,7 @@ type panelSettingsModel struct {
 	SubJSONUserAgentRegex       types.String `tfsdk:"sub_json_user_agent_regex"`
 	SubClashAutoDetect          types.Bool   `tfsdk:"sub_clash_auto_detect"`
 	SubClashUserAgentRegex      types.String `tfsdk:"sub_clash_user_agent_regex"`
+	SubJSONObservatory          types.String `tfsdk:"sub_json_observatory"`
 	SubTitle                    types.String `tfsdk:"sub_title"`
 	SubSupportURL               types.String `tfsdk:"sub_support_url"`
 	SubProfileURL               types.String `tfsdk:"sub_profile_url"`
@@ -840,6 +861,7 @@ func (r *panelSettingsResource) modelToPayload(m *panelSettingsModel) map[string
 		"webKeyFile":                  m.WebKeyFile.ValueString(),
 		"webBasePath":                 m.WebBasePath.ValueString(),
 		"trustedProxyCIDRs":           m.TrustedProxyCIDRs.ValueString(),
+		"ipLimitAllowlist":            m.IPLimitAllowlist.ValueString(),
 		"panelOutbound":               m.PanelProxy.ValueString(),
 		"sessionMaxAge":               m.SessionMaxAge.ValueInt64(),
 		"pageSize":                    m.PageSize.ValueInt64(),
@@ -847,6 +869,7 @@ func (r *panelSettingsResource) modelToPayload(m *panelSettingsModel) map[string
 		"trafficDiff":                 m.TrafficDiff.ValueInt64(),
 		"remarkTemplate":              m.RemarkModel.ValueString(),
 		"datepicker":                  m.Datepicker.ValueString(),
+		"subShowIdentityOnAllLinks":   m.SubShowIdentityOnAllLinks.ValueBool(),
 		"tgBotEnable":                 m.TgBotEnable.ValueBool(),
 		"tgBotToken":                  m.TgBotToken.ValueString(),
 		"tgBotProxy":                  m.TgBotProxy.ValueString(),
@@ -902,6 +925,7 @@ func (r *panelSettingsResource) modelToPayload(m *panelSettingsModel) map[string
 		"subJsonUserAgentRegex":       m.SubJSONUserAgentRegex.ValueString(),
 		"subClashAutoDetect":          m.SubClashAutoDetect.ValueBool(),
 		"subClashUserAgentRegex":      m.SubClashUserAgentRegex.ValueString(),
+		"subJsonObservatory":          m.SubJSONObservatory.ValueString(),
 		"subTitle":                    m.SubTitle.ValueString(),
 		"subSupportUrl":               m.SubSupportURL.ValueString(),
 		"subProfileUrl":               m.SubProfileURL.ValueString(),
@@ -941,14 +965,17 @@ func (r *panelSettingsResource) modelToPayload(m *panelSettingsModel) map[string
 // panelSettingsOptionalKeys were added after 3x-ui v3.5.0. Older panels omit
 // them from /setting/all; keep prior Terraform state instead of zeroing.
 var panelSettingsOptionalKeys = map[string]struct{}{
-	"outboundDownThreshold":  {},
-	"smtpFrom":               {},
-	"smtpFromName":           {},
-	"subJsonAutoDetect":      {},
-	"subJsonAlwaysArray":     {},
-	"subJsonUserAgentRegex":  {},
-	"subClashAutoDetect":     {},
-	"subClashUserAgentRegex": {},
+	"outboundDownThreshold":     {},
+	"smtpFrom":                  {},
+	"smtpFromName":              {},
+	"subJsonAutoDetect":         {},
+	"subJsonAlwaysArray":        {},
+	"subJsonUserAgentRegex":     {},
+	"subClashAutoDetect":        {},
+	"subClashUserAgentRegex":    {},
+	"subShowIdentityOnAllLinks": {},
+	"ipLimitAllowlist":          {},
+	"subJsonObservatory":        {},
 }
 
 func panelSettingsHasKey(m map[string]any, key string) bool {
@@ -964,6 +991,7 @@ func (r *panelSettingsResource) apiToModel(m map[string]any, state *panelSetting
 	state.WebKeyFile = types.StringValue(stringFromMap(m, "webKeyFile"))
 	state.WebBasePath = types.StringValue(stringFromMap(m, "webBasePath"))
 	state.TrustedProxyCIDRs = types.StringValue(stringFromMap(m, "trustedProxyCIDRs"))
+	assignOptionalString(m, "ipLimitAllowlist", &state.IPLimitAllowlist, "")
 	state.PanelProxy = types.StringValue(stringFromMap(m, "panelOutbound"))
 	state.SessionMaxAge = types.Int64Value(int64FromMap(m, "sessionMaxAge"))
 	state.PageSize = types.Int64Value(int64FromMap(m, "pageSize"))
@@ -971,6 +999,7 @@ func (r *panelSettingsResource) apiToModel(m map[string]any, state *panelSetting
 	state.TrafficDiff = types.Int64Value(int64FromMap(m, "trafficDiff"))
 	state.RemarkModel = types.StringValue(stringFromMap(m, "remarkTemplate"))
 	state.Datepicker = types.StringValue(stringFromMap(m, "datepicker"))
+	assignOptionalBool(m, "subShowIdentityOnAllLinks", &state.SubShowIdentityOnAllLinks, false)
 	state.TgBotEnable = types.BoolValue(boolFromMap(m, "tgBotEnable"))
 	state.TgBotToken = types.StringValue(stringFromMap(m, "tgBotToken"))
 	state.TgBotProxy = types.StringValue(stringFromMap(m, "tgBotProxy"))
@@ -1026,6 +1055,7 @@ func (r *panelSettingsResource) apiToModel(m map[string]any, state *panelSetting
 	assignOptionalString(m, "subJsonUserAgentRegex", &state.SubJSONUserAgentRegex, "")
 	assignOptionalBool(m, "subClashAutoDetect", &state.SubClashAutoDetect, false)
 	assignOptionalString(m, "subClashUserAgentRegex", &state.SubClashUserAgentRegex, "")
+	assignOptionalString(m, "subJsonObservatory", &state.SubJSONObservatory, "")
 	state.SubTitle = types.StringValue(stringFromMap(m, "subTitle"))
 	state.SubSupportURL = types.StringValue(stringFromMap(m, "subSupportUrl"))
 	state.SubProfileURL = types.StringValue(stringFromMap(m, "subProfileUrl"))

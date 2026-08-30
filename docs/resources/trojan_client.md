@@ -51,12 +51,17 @@ resource "xui_trojan_client" "example" {
 - `comment` (String)
 - `enable` (Boolean)
 - `expiry_time` (Number) Expiry in milliseconds since Unix epoch (0 = never).
+- `limit_hwid` (Number) Per-client subscription HWID device limit (`limitHwid`; 0 = unlimited).
 - `limit_ip` (Number)
 - `password` (String, Sensitive) Trojan client password. If omitted, the panel generates one on create.
-- `reset` (Number)
+- `reset` (Number) Rolling auto-renew interval in days (`reset`). Ignored when `reset_day` is set.
+- `reset_day` (Number) Calendar renewal day of month 1–31 (`resetDay`). `0` keeps rolling `reset` mode.
+- `reset_max` (Number) Maximum number of auto-renewals (`resetMax`; 0 = unlimited).
 - `sub_id` (String)
 - `tg_id` (Number)
 - `total_gb` (Number) Traffic limit in **bytes** (panel field `totalGB`; 0 = unlimited).
+- `traffic_reset` (String) Per-client traffic reset cycle: `never`, `hourly`, `daily`, `weekly`, or `monthly`.
+- `traffic_reset_day` (Number) Day of month for monthly per-client traffic reset (`trafficResetDay`).
 
 ### Read-Only
 

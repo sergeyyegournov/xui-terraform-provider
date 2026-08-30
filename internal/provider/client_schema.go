@@ -43,6 +43,12 @@ func clientCommonSchemaAttributes(idDesc string) map[string]schema.Attribute {
 			Computed: true,
 			Default:  int64default.StaticInt64(0),
 		},
+		"limit_hwid": schema.Int64Attribute{
+			MarkdownDescription: "Per-client subscription HWID device limit (`limitHwid`; 0 = unlimited).",
+			Optional:            true,
+			Computed:            true,
+			Default:             int64default.StaticInt64(0),
+		},
 		"total_gb": schema.Int64Attribute{
 			MarkdownDescription: "Traffic limit in **bytes** (panel field `totalGB`; 0 = unlimited).",
 			Optional:            true,
@@ -73,9 +79,34 @@ func clientCommonSchemaAttributes(idDesc string) map[string]schema.Attribute {
 			Default:  stringdefault.StaticString(""),
 		},
 		"reset": schema.Int64Attribute{
-			Optional: true,
-			Computed: true,
-			Default:  int64default.StaticInt64(0),
+			MarkdownDescription: "Rolling auto-renew interval in days (`reset`). Ignored when `reset_day` is set.",
+			Optional:            true,
+			Computed:            true,
+			Default:             int64default.StaticInt64(0),
+		},
+		"reset_day": schema.Int64Attribute{
+			MarkdownDescription: "Calendar renewal day of month 1–31 (`resetDay`). `0` keeps rolling `reset` mode.",
+			Optional:            true,
+			Computed:            true,
+			Default:             int64default.StaticInt64(0),
+		},
+		"reset_max": schema.Int64Attribute{
+			MarkdownDescription: "Maximum number of auto-renewals (`resetMax`; 0 = unlimited).",
+			Optional:            true,
+			Computed:            true,
+			Default:             int64default.StaticInt64(0),
+		},
+		"traffic_reset": schema.StringAttribute{
+			MarkdownDescription: "Per-client traffic reset cycle: `never`, `hourly`, `daily`, `weekly`, or `monthly`.",
+			Optional:            true,
+			Computed:            true,
+			Default:             stringdefault.StaticString("never"),
+		},
+		"traffic_reset_day": schema.Int64Attribute{
+			MarkdownDescription: "Day of month for monthly per-client traffic reset (`trafficResetDay`).",
+			Optional:            true,
+			Computed:            true,
+			Default:             int64default.StaticInt64(1),
 		},
 	}
 }

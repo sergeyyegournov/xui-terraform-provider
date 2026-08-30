@@ -55,6 +55,8 @@ func TestAccPanelSettings_newAttributes(t *testing.T) {
 					resource.TestCheckResourceAttr("xui_panel_settings.test", "tg_enabled_events", "cpu.high"),
 					resource.TestCheckResourceAttr("xui_panel_settings.test", "smtp_port", "2525"),
 					resource.TestCheckResourceAttr("xui_panel_settings.test", "outbound_down_threshold", "5"),
+					resource.TestCheckResourceAttr("xui_panel_settings.test", "sub_show_identity_on_all_links", "true"),
+					resource.TestCheckResourceAttr("xui_panel_settings.test", "ip_limit_allowlist", "10.0.0.1/32"),
 					resource.TestCheckResourceAttr("xui_panel_settings.test", "sub_clash_enable_routing", "true"),
 					resource.TestCheckResourceAttr("xui_panel_settings.test", "sub_hide_settings", "true"),
 					resource.TestCheckResourceAttr("xui_panel_settings.test", "ldap_insecure_skip_verify", "true"),
@@ -85,8 +87,10 @@ resource "xui_panel_settings" "test" {
   tg_memory                 = 90
   tg_enabled_events         = "cpu.high"
   smtp_port                 = 2525
-  outbound_down_threshold   = 5
-  sub_clash_enable_routing  = true
+  outbound_down_threshold       = 5
+  sub_show_identity_on_all_links = true
+  ip_limit_allowlist            = "10.0.0.1/32"
+  sub_clash_enable_routing      = true
   sub_hide_settings         = true
   ldap_insecure_skip_verify = true
   warp_update_interval      = 24

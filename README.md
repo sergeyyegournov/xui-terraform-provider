@@ -4,6 +4,18 @@ Terraform provider to manage [3x-ui](https://github.com/MHSanaei/3x-ui/) **v3+**
 
 Requires a 3x-ui panel that exposes the v3 API (`/panel/api/*`, CSRF-protected session auth or optional API tokens). Requires 3x-ui **v3.4.0+** (settings/Xray under `/panel/api`, `panelOutbound` / `remarkTemplate` field names).
 
+## Panel compatibility
+
+This provider release (**v0.8.0**) is developed and acceptance-tested against **[3x-ui v3.7.0](https://github.com/MHSanaei/3x-ui/releases/tag/v3.7.0)**. Older panels from **v3.4.0+** still work for core resources; attributes added in 3.6/3.7 are optional on older panels.
+
+### Not implemented yet
+
+These 3x-ui surfaces exist in the panel API but are **not** managed as Terraform resources yet:
+
+- **HWID device registry** — list / clear / delete individual devices (`/panel/api/clients/hwids/…`). Per-client **`limit_hwid`** is supported on client resources.
+- **API token management** — create / enable / delete panel API tokens (`/panel/api/setting/apiTokens/…`). Consuming a token via provider `api_token` is supported.
+- **Per-client external links** — replace-all external links / remote subscriptions (`/panel/api/clients/{email}/externalLinks`).
+
 ## Features
 
 - **Inbounds** — create, update, import, and destroy Xray inbounds (`xui_inbound`).
@@ -13,6 +25,7 @@ Requires a 3x-ui panel that exposes the v3 API (`/panel/api/*`, CSRF-protected s
   - `xui_trojan_client`
   - `xui_shadowsocks_client`
   - `xui_hysteria_client`
+  - `xui_amneziawg_client` (AmneziaWG peers; inbound via `xui_inbound` with `protocol = "amneziawg"`)
 - **Panel & Xray** — `xui_panel_settings`, `xui_xray_template`.
 - **Data sources** — `xui_inbounds`, `xui_inbound` (optional protocol filter).
 
@@ -21,7 +34,7 @@ Client secrets (`uuid`, `password`, `auth`) can be set in Terraform or left unse
 ## Requirements
 
 - [Terraform](https://www.terraform.io/downloads) >= 1.0
-- A reachable 3x-ui **v3.4.0+** panel
+- A reachable 3x-ui **v3.4.0+** panel (recommended: **v3.7.0**, matching this provider)
 
 ## Provider configuration
 
@@ -30,7 +43,7 @@ terraform {
   required_providers {
     xui = {
       source  = "sergeyyegournov/xui" # after Terraform Registry publish; see below for local dev
-      version = "~> 0.5"
+      version = "~> 0.8"
     }
   }
 }
@@ -38,7 +51,7 @@ terraform {
 provider "xui" {
   base_url = "https://panel.example.com/your-random-path/" # trailing slash as in the panel URL
 
-  # Option A: API token (recommended)
+  # Option A: API token (recommended; on 3x-ui v3.7+ use an admin-scope token)
   api_token = var.xui_api_token
 
   # Option B: username + password (session + CSRF)
@@ -52,7 +65,7 @@ provider "xui" {
 | Argument | Description |
 |----------|-------------|
 | `base_url` | Panel root URL including the random path prefix. |
-| `api_token` | Bearer token for `/panel/api/*` (Settings → API tokens in the panel). |
+| `api_token` | Bearer token for `/panel/api/*` (Settings → API tokens in the panel). On 3x-ui **v3.7+**, use an **admin**-scope token (`monitor` / `node-sync` cannot manage resources). |
 | `username` / `password` | Session auth when not using a token. |
 | `insecure_skip_verify` | Skip TLS certificate verification. |
 
@@ -137,7 +150,7 @@ make testacc  # acceptance tests (Docker + 3x-ui container)
 make docs     # regenerate docs/ from schema
 ```
 
-Acceptance tests use [testcontainers](https://golang.testcontainers.org/) with `ghcr.io/mhsanaei/3x-ui:v3.5.0`. Docker must be running.
+Acceptance tests use [testcontainers](https://golang.testcontainers.org/) with `ghcr.io/mhsanaei/3x-ui:v3.7.0`. Docker must be running.
 
 ## Releasing
 

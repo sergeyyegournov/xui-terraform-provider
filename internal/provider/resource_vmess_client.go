@@ -24,20 +24,25 @@ type vmessClientResource struct {
 }
 
 type vmessClientModel struct {
-	ID         types.String `tfsdk:"id"`
-	InboundID  types.Int64  `tfsdk:"inbound_id"`
-	Email      types.String `tfsdk:"email"`
-	UUID       types.String `tfsdk:"uuid"`
-	Security   types.String `tfsdk:"security"`
-	Flow       types.String `tfsdk:"flow"`
-	Enable     types.Bool   `tfsdk:"enable"`
-	LimitIP    types.Int64  `tfsdk:"limit_ip"`
-	TotalGB    types.Int64  `tfsdk:"total_gb"`
-	ExpiryTime types.Int64  `tfsdk:"expiry_time"`
-	TgID       types.Int64  `tfsdk:"tg_id"`
-	SubID      types.String `tfsdk:"sub_id"`
-	Comment    types.String `tfsdk:"comment"`
-	Reset      types.Int64  `tfsdk:"reset"`
+	ID              types.String `tfsdk:"id"`
+	InboundID       types.Int64  `tfsdk:"inbound_id"`
+	Email           types.String `tfsdk:"email"`
+	UUID            types.String `tfsdk:"uuid"`
+	Security        types.String `tfsdk:"security"`
+	Flow            types.String `tfsdk:"flow"`
+	Enable          types.Bool   `tfsdk:"enable"`
+	LimitIP         types.Int64  `tfsdk:"limit_ip"`
+	LimitHwid       types.Int64  `tfsdk:"limit_hwid"`
+	TotalGB         types.Int64  `tfsdk:"total_gb"`
+	ExpiryTime      types.Int64  `tfsdk:"expiry_time"`
+	TgID            types.Int64  `tfsdk:"tg_id"`
+	SubID           types.String `tfsdk:"sub_id"`
+	Comment         types.String `tfsdk:"comment"`
+	Reset           types.Int64  `tfsdk:"reset"`
+	ResetDay        types.Int64  `tfsdk:"reset_day"`
+	ResetMax        types.Int64  `tfsdk:"reset_max"`
+	TrafficReset    types.String `tfsdk:"traffic_reset"`
+	TrafficResetDay types.Int64  `tfsdk:"traffic_reset_day"`
 }
 
 func NewVMessClientResource() resource.Resource {
@@ -88,6 +93,15 @@ func (r *vmessClientResource) Configure(_ context.Context, req resource.Configur
 	r.client = cli
 }
 
+func (m vmessClientModel) toPanelPlan(id, security string) panelClientPlan {
+	return panelClientPlan{
+		Email: m.Email.ValueString(), Enable: m.Enable, LimitIP: m.LimitIP, LimitHwid: m.LimitHwid,
+		TotalGB: m.TotalGB, ExpiryTime: m.ExpiryTime, TgID: m.TgID, Reset: m.Reset,
+		ResetDay: m.ResetDay, ResetMax: m.ResetMax, TrafficReset: m.TrafficReset, TrafficResetDay: m.TrafficResetDay,
+		Flow: m.Flow, SubID: m.SubID, Comment: m.Comment, ID: id, Security: security,
+	}
+}
+
 func (r *vmessClientResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan vmessClientModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
@@ -106,13 +120,9 @@ func (r *vmessClientResource) Create(ctx context.Context, req resource.CreateReq
 	if !plan.Security.IsNull() && plan.Security.ValueString() != "" {
 		security = plan.Security.ValueString()
 	}
-	input := planToPanelClientInput(
-		plan.Email.ValueString(), plan.Enable, plan.LimitIP, plan.TotalGB, plan.ExpiryTime, plan.TgID, plan.Reset,
-		plan.Flow, plan.SubID, plan.Comment, id, "", "", security,
-	)
 	wantEmptyFlow := !plan.Flow.IsNull() && plan.Flow.ValueString() == ""
 	wantEmptyComment := !plan.Comment.IsNull() && plan.Comment.ValueString() == ""
-	rec, err := createPanelClient(r.client, plan.Email.ValueString(), int(plan.InboundID.ValueInt64()), input)
+	rec, err := createPanelClient(r.client, plan.Email.ValueString(), int(plan.InboundID.ValueInt64()), planToPanelClientInput(plan.toPanelPlan(id, security)))
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
@@ -155,11 +165,7 @@ func (r *vmessClientResource) Update(ctx context.Context, req resource.UpdateReq
 		return
 	}
 	security := plan.Security.ValueString()
-	input := planToPanelClientInput(
-		plan.Email.ValueString(), plan.Enable, plan.LimitIP, plan.TotalGB, plan.ExpiryTime, plan.TgID, plan.Reset,
-		plan.Flow, plan.SubID, plan.Comment, state.ID.ValueString(), "", "", security,
-	)
-	if err := r.client.UpdateClient(state.Email.ValueString(), input); err != nil {
+	if err := r.client.UpdateClient(state.Email.ValueString(), planToPanelClientInput(plan.toPanelPlan(state.ID.ValueString(), security))); err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
@@ -177,12 +183,17 @@ func (r *vmessClientResource) Update(ctx context.Context, req resource.UpdateReq
 	state.Security = plan.Security
 	state.Enable = plan.Enable
 	state.LimitIP = plan.LimitIP
+	state.LimitHwid = plan.LimitHwid
 	state.TotalGB = plan.TotalGB
 	state.ExpiryTime = plan.ExpiryTime
 	state.TgID = plan.TgID
 	state.SubID = plan.SubID
 	state.Comment = plan.Comment
 	state.Reset = plan.Reset
+	state.ResetDay = plan.ResetDay
+	state.ResetMax = plan.ResetMax
+	state.TrafficReset = plan.TrafficReset
+	state.TrafficResetDay = plan.TrafficResetDay
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
@@ -220,5 +231,5 @@ func applyVMessRecord(m *vmessClientModel, rec xui.PanelClientRecord) {
 	applyVMessClientSecretsFromRecord(m, rec)
 	m.Security = types.StringValue(rec.Security)
 	m.Flow = types.StringValue(rec.Flow)
-	applyCommonClientFields(&m.Enable, &m.LimitIP, &m.TotalGB, &m.ExpiryTime, &m.TgID, &m.Reset, &m.SubID, &m.Comment, rec)
+	applyCommonClientFields(&m.Enable, &m.LimitIP, &m.LimitHwid, &m.TotalGB, &m.ExpiryTime, &m.TgID, &m.Reset, &m.ResetDay, &m.ResetMax, &m.TrafficResetDay, &m.TrafficReset, &m.SubID, &m.Comment, rec)
 }

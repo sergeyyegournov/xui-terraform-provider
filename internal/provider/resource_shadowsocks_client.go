@@ -7,11 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
@@ -26,18 +22,23 @@ type shadowsocksClientResource struct {
 }
 
 type shadowsocksClientModel struct {
-	ID         types.String `tfsdk:"id"`
-	InboundID  types.Int64  `tfsdk:"inbound_id"`
-	Email      types.String `tfsdk:"email"`
-	Password   types.String `tfsdk:"password"`
-	Enable     types.Bool   `tfsdk:"enable"`
-	LimitIP    types.Int64  `tfsdk:"limit_ip"`
-	TotalGB    types.Int64  `tfsdk:"total_gb"`
-	ExpiryTime types.Int64  `tfsdk:"expiry_time"`
-	TgID       types.Int64  `tfsdk:"tg_id"`
-	SubID      types.String `tfsdk:"sub_id"`
-	Comment    types.String `tfsdk:"comment"`
-	Reset      types.Int64  `tfsdk:"reset"`
+	ID              types.String `tfsdk:"id"`
+	InboundID       types.Int64  `tfsdk:"inbound_id"`
+	Email           types.String `tfsdk:"email"`
+	Password        types.String `tfsdk:"password"`
+	Enable          types.Bool   `tfsdk:"enable"`
+	LimitIP         types.Int64  `tfsdk:"limit_ip"`
+	LimitHwid       types.Int64  `tfsdk:"limit_hwid"`
+	TotalGB         types.Int64  `tfsdk:"total_gb"`
+	ExpiryTime      types.Int64  `tfsdk:"expiry_time"`
+	TgID            types.Int64  `tfsdk:"tg_id"`
+	SubID           types.String `tfsdk:"sub_id"`
+	Comment         types.String `tfsdk:"comment"`
+	Reset           types.Int64  `tfsdk:"reset"`
+	ResetDay        types.Int64  `tfsdk:"reset_day"`
+	ResetMax        types.Int64  `tfsdk:"reset_max"`
+	TrafficReset    types.String `tfsdk:"traffic_reset"`
+	TrafficResetDay types.Int64  `tfsdk:"traffic_reset_day"`
 }
 
 func NewShadowsocksClientResource() resource.Resource {
@@ -49,84 +50,19 @@ func (r *shadowsocksClientResource) Metadata(_ context.Context, _ resource.Metad
 }
 
 func (r *shadowsocksClientResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+	attrs := clientCommonSchemaAttributes("Client password from the panel (server-generated unless `password` is set).")
+	attrs["password"] = schema.StringAttribute{
+		MarkdownDescription: "Shadowsocks client password. If omitted, the panel generates one on create.",
+		Optional:            true,
+		Computed:            true,
+		Sensitive:           true,
+		PlanModifiers: []planmodifier.String{
+			stringplanmodifier.UseStateForUnknown(),
+		},
+	}
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Shadowsocks user (client) on an existing 3x-ui inbound. Managed via `/panel/api/clients/*` (add, get, update, del).",
-		Attributes: map[string]schema.Attribute{
-			"id": schema.StringAttribute{
-				Computed:            true,
-				MarkdownDescription: "Client password from the panel (server-generated unless `password` is set).",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"inbound_id": schema.Int64Attribute{
-				MarkdownDescription: "Panel inbound id (number from URL / API).",
-				Required:            true,
-				PlanModifiers: []planmodifier.Int64{
-					int64planmodifier.RequiresReplace(),
-				},
-			},
-			"email": schema.StringAttribute{
-				MarkdownDescription: "Unique client email / label in the panel.",
-				Required:            true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"password": schema.StringAttribute{
-				MarkdownDescription: "Shadowsocks client password. If omitted, the panel generates one on create.",
-				Optional:            true,
-				Computed:            true,
-				Sensitive:           true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"enable": schema.BoolAttribute{
-				Optional: true,
-				Computed: true,
-				Default:  booldefault.StaticBool(true),
-			},
-			"limit_ip": schema.Int64Attribute{
-				Optional: true,
-				Computed: true,
-				Default:  int64default.StaticInt64(0),
-			},
-			"total_gb": schema.Int64Attribute{
-				MarkdownDescription: "Traffic limit in **bytes** (panel field `totalGB`; 0 = unlimited).",
-				Optional:            true,
-				Computed:            true,
-				Default:             int64default.StaticInt64(0),
-			},
-			"expiry_time": schema.Int64Attribute{
-				MarkdownDescription: "Expiry in milliseconds since Unix epoch (0 = never).",
-				Optional:            true,
-				Computed:            true,
-				Default:             int64default.StaticInt64(0),
-			},
-			"tg_id": schema.Int64Attribute{
-				Optional: true,
-				Computed: true,
-				Default:  int64default.StaticInt64(0),
-			},
-			"sub_id": schema.StringAttribute{
-				Optional: true,
-				Computed: true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"comment": schema.StringAttribute{
-				Optional: true,
-				Computed: true,
-				Default:  stringdefault.StaticString(""),
-			},
-			"reset": schema.Int64Attribute{
-				Optional: true,
-				Computed: true,
-				Default:  int64default.StaticInt64(0),
-			},
-		},
+		Attributes:          attrs,
 	}
 }
 
@@ -142,6 +78,15 @@ func (r *shadowsocksClientResource) Configure(_ context.Context, req resource.Co
 	r.client = cli
 }
 
+func (m shadowsocksClientModel) toPanelPlan(password string) panelClientPlan {
+	return panelClientPlan{
+		Email: m.Email.ValueString(), Enable: m.Enable, LimitIP: m.LimitIP, LimitHwid: m.LimitHwid,
+		TotalGB: m.TotalGB, ExpiryTime: m.ExpiryTime, TgID: m.TgID, Reset: m.Reset,
+		ResetDay: m.ResetDay, ResetMax: m.ResetMax, TrafficReset: m.TrafficReset, TrafficResetDay: m.TrafficResetDay,
+		Flow: types.StringNull(), SubID: m.SubID, Comment: m.Comment, Password: password,
+	}
+}
+
 func (r *shadowsocksClientResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan shadowsocksClientModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
@@ -152,11 +97,7 @@ func (r *shadowsocksClientResource) Create(ctx context.Context, req resource.Cre
 	if !plan.Password.IsNull() {
 		password = strings.TrimSpace(plan.Password.ValueString())
 	}
-	input := planToPanelClientInput(
-		plan.Email.ValueString(), plan.Enable, plan.LimitIP, plan.TotalGB, plan.ExpiryTime, plan.TgID, plan.Reset,
-		types.StringNull(), plan.SubID, plan.Comment, "", password, "", "",
-	)
-	rec, err := createPanelClient(r.client, plan.Email.ValueString(), int(plan.InboundID.ValueInt64()), input)
+	rec, err := createPanelClient(r.client, plan.Email.ValueString(), int(plan.InboundID.ValueInt64()), planToPanelClientInput(plan.toPanelPlan(password)))
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
@@ -199,11 +140,7 @@ func (r *shadowsocksClientResource) Update(ctx context.Context, req resource.Upd
 	if !plan.Password.IsNull() && plan.Password.ValueString() != "" {
 		password = plan.Password.ValueString()
 	}
-	input := planToPanelClientInput(
-		plan.Email.ValueString(), plan.Enable, plan.LimitIP, plan.TotalGB, plan.ExpiryTime, plan.TgID, plan.Reset,
-		types.StringNull(), plan.SubID, plan.Comment, "", password, "", "",
-	)
-	if err := r.client.UpdateClient(state.Email.ValueString(), input); err != nil {
+	if err := r.client.UpdateClient(state.Email.ValueString(), planToPanelClientInput(plan.toPanelPlan(password))); err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
@@ -219,12 +156,17 @@ func (r *shadowsocksClientResource) Update(ctx context.Context, req resource.Upd
 	applyShadowsocksRecord(&state, *rec)
 	state.Enable = plan.Enable
 	state.LimitIP = plan.LimitIP
+	state.LimitHwid = plan.LimitHwid
 	state.TotalGB = plan.TotalGB
 	state.ExpiryTime = plan.ExpiryTime
 	state.TgID = plan.TgID
 	state.SubID = plan.SubID
 	state.Comment = plan.Comment
 	state.Reset = plan.Reset
+	state.ResetDay = plan.ResetDay
+	state.ResetMax = plan.ResetMax
+	state.TrafficReset = plan.TrafficReset
+	state.TrafficResetDay = plan.TrafficResetDay
 	if !plan.Password.IsNull() && plan.Password.ValueString() != "" {
 		state.Password = plan.Password
 	}
@@ -259,5 +201,5 @@ func applyShadowsocksClientSecretsFromRecord(m *shadowsocksClientModel, rec xui.
 
 func applyShadowsocksRecord(m *shadowsocksClientModel, rec xui.PanelClientRecord) {
 	applyShadowsocksClientSecretsFromRecord(m, rec)
-	applyCommonClientFields(&m.Enable, &m.LimitIP, &m.TotalGB, &m.ExpiryTime, &m.TgID, &m.Reset, &m.SubID, &m.Comment, rec)
+	applyCommonClientFields(&m.Enable, &m.LimitIP, &m.LimitHwid, &m.TotalGB, &m.ExpiryTime, &m.TgID, &m.Reset, &m.ResetDay, &m.ResetMax, &m.TrafficResetDay, &m.TrafficReset, &m.SubID, &m.Comment, rec)
 }

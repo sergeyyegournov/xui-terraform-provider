@@ -29,19 +29,24 @@ type vlessClientResource struct {
 }
 
 type vlessClientModel struct {
-	ID         types.String `tfsdk:"id"`
-	InboundID  types.Int64  `tfsdk:"inbound_id"`
-	Email      types.String `tfsdk:"email"`
-	UUID       types.String `tfsdk:"uuid"`
-	Flow       types.String `tfsdk:"flow"`
-	Enable     types.Bool   `tfsdk:"enable"`
-	LimitIP    types.Int64  `tfsdk:"limit_ip"`
-	TotalGB    types.Int64  `tfsdk:"total_gb"`
-	ExpiryTime types.Int64  `tfsdk:"expiry_time"`
-	TgID       types.Int64  `tfsdk:"tg_id"`
-	SubID      types.String `tfsdk:"sub_id"`
-	Comment    types.String `tfsdk:"comment"`
-	Reset      types.Int64  `tfsdk:"reset"`
+	ID              types.String `tfsdk:"id"`
+	InboundID       types.Int64  `tfsdk:"inbound_id"`
+	Email           types.String `tfsdk:"email"`
+	UUID            types.String `tfsdk:"uuid"`
+	Flow            types.String `tfsdk:"flow"`
+	Enable          types.Bool   `tfsdk:"enable"`
+	LimitIP         types.Int64  `tfsdk:"limit_ip"`
+	LimitHwid       types.Int64  `tfsdk:"limit_hwid"`
+	TotalGB         types.Int64  `tfsdk:"total_gb"`
+	ExpiryTime      types.Int64  `tfsdk:"expiry_time"`
+	TgID            types.Int64  `tfsdk:"tg_id"`
+	SubID           types.String `tfsdk:"sub_id"`
+	Comment         types.String `tfsdk:"comment"`
+	Reset           types.Int64  `tfsdk:"reset"`
+	ResetDay        types.Int64  `tfsdk:"reset_day"`
+	ResetMax        types.Int64  `tfsdk:"reset_max"`
+	TrafficReset    types.String `tfsdk:"traffic_reset"`
+	TrafficResetDay types.Int64  `tfsdk:"traffic_reset_day"`
 }
 
 func NewVLESSClientResource() resource.Resource {
@@ -101,6 +106,12 @@ func (r *vlessClientResource) Schema(_ context.Context, _ resource.SchemaRequest
 				Computed: true,
 				Default:  int64default.StaticInt64(0),
 			},
+			"limit_hwid": schema.Int64Attribute{
+				MarkdownDescription: "Per-client subscription HWID device limit (`limitHwid`; 0 = unlimited).",
+				Optional:            true,
+				Computed:            true,
+				Default:             int64default.StaticInt64(0),
+			},
 			"total_gb": schema.Int64Attribute{
 				MarkdownDescription: "Traffic limit in **bytes** (panel field `totalGB`; 0 = unlimited).",
 				Optional:            true,
@@ -131,9 +142,34 @@ func (r *vlessClientResource) Schema(_ context.Context, _ resource.SchemaRequest
 				Default:  stringdefault.StaticString(""),
 			},
 			"reset": schema.Int64Attribute{
-				Optional: true,
-				Computed: true,
-				Default:  int64default.StaticInt64(0),
+				MarkdownDescription: "Rolling auto-renew interval in days (`reset`). Ignored when `reset_day` is set.",
+				Optional:            true,
+				Computed:            true,
+				Default:             int64default.StaticInt64(0),
+			},
+			"reset_day": schema.Int64Attribute{
+				MarkdownDescription: "Calendar renewal day of month 1–31 (`resetDay`). `0` keeps rolling `reset` mode.",
+				Optional:            true,
+				Computed:            true,
+				Default:             int64default.StaticInt64(0),
+			},
+			"reset_max": schema.Int64Attribute{
+				MarkdownDescription: "Maximum number of auto-renewals (`resetMax`; 0 = unlimited).",
+				Optional:            true,
+				Computed:            true,
+				Default:             int64default.StaticInt64(0),
+			},
+			"traffic_reset": schema.StringAttribute{
+				MarkdownDescription: "Per-client traffic reset cycle: `never`, `hourly`, `daily`, `weekly`, or `monthly`.",
+				Optional:            true,
+				Computed:            true,
+				Default:             stringdefault.StaticString("never"),
+			},
+			"traffic_reset_day": schema.Int64Attribute{
+				MarkdownDescription: "Day of month for monthly per-client traffic reset (`trafficResetDay`).",
+				Optional:            true,
+				Computed:            true,
+				Default:             int64default.StaticInt64(1),
 			},
 		},
 	}
@@ -151,6 +187,15 @@ func (r *vlessClientResource) Configure(_ context.Context, req resource.Configur
 	r.client = cli
 }
 
+func (m vlessClientModel) toPanelPlan(id string) panelClientPlan {
+	return panelClientPlan{
+		Email: m.Email.ValueString(), Enable: m.Enable, LimitIP: m.LimitIP, LimitHwid: m.LimitHwid,
+		TotalGB: m.TotalGB, ExpiryTime: m.ExpiryTime, TgID: m.TgID, Reset: m.Reset,
+		ResetDay: m.ResetDay, ResetMax: m.ResetMax, TrafficReset: m.TrafficReset, TrafficResetDay: m.TrafficResetDay,
+		Flow: m.Flow, SubID: m.SubID, Comment: m.Comment, ID: id,
+	}
+}
+
 func (r *vlessClientResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan vlessClientModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
@@ -165,13 +210,9 @@ func (r *vlessClientResource) Create(ctx context.Context, req resource.CreateReq
 		}
 		id = uid
 	}
-	input := planToPanelClientInput(
-		plan.Email.ValueString(), plan.Enable, plan.LimitIP, plan.TotalGB, plan.ExpiryTime, plan.TgID, plan.Reset,
-		plan.Flow, plan.SubID, plan.Comment, id, "", "", "",
-	)
 	wantEmptyFlow := !plan.Flow.IsNull() && plan.Flow.ValueString() == ""
 	wantEmptyComment := !plan.Comment.IsNull() && plan.Comment.ValueString() == ""
-	rec, err := createPanelClient(r.client, plan.Email.ValueString(), int(plan.InboundID.ValueInt64()), input)
+	rec, err := createPanelClient(r.client, plan.Email.ValueString(), int(plan.InboundID.ValueInt64()), planToPanelClientInput(plan.toPanelPlan(id)))
 	if err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
@@ -210,14 +251,7 @@ func (r *vlessClientResource) Read(ctx context.Context, req resource.ReadRequest
 	state.ID = types.StringValue(uid)
 	state.UUID = types.StringValue(uid)
 	state.Flow = types.StringValue(rec.Flow)
-	state.Enable = types.BoolValue(rec.Enable)
-	state.LimitIP = types.Int64Value(rec.LimitIP)
-	state.TotalGB = types.Int64Value(rec.TotalGB)
-	state.ExpiryTime = types.Int64Value(rec.ExpiryTime)
-	state.TgID = types.Int64Value(rec.TgID)
-	state.SubID = types.StringValue(rec.SubID)
-	state.Comment = types.StringValue(rec.Comment)
-	state.Reset = types.Int64Value(rec.Reset)
+	applyCommonClientFields(&state.Enable, &state.LimitIP, &state.LimitHwid, &state.TotalGB, &state.ExpiryTime, &state.TgID, &state.Reset, &state.ResetDay, &state.ResetMax, &state.TrafficResetDay, &state.TrafficReset, &state.SubID, &state.Comment, *rec)
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
@@ -228,11 +262,7 @@ func (r *vlessClientResource) Update(ctx context.Context, req resource.UpdateReq
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	input := planToPanelClientInput(
-		plan.Email.ValueString(), plan.Enable, plan.LimitIP, plan.TotalGB, plan.ExpiryTime, plan.TgID, plan.Reset,
-		plan.Flow, plan.SubID, plan.Comment, state.ID.ValueString(), "", "", "",
-	)
-	if err := r.client.UpdateClient(state.Email.ValueString(), input); err != nil {
+	if err := r.client.UpdateClient(state.Email.ValueString(), planToPanelClientInput(plan.toPanelPlan(state.ID.ValueString()))); err != nil {
 		resp.Diagnostics.AddError("API error", err.Error())
 		return
 	}
@@ -251,12 +281,17 @@ func (r *vlessClientResource) Update(ctx context.Context, req resource.UpdateReq
 	state.Flow = plan.Flow
 	state.Enable = plan.Enable
 	state.LimitIP = plan.LimitIP
+	state.LimitHwid = plan.LimitHwid
 	state.TotalGB = plan.TotalGB
 	state.ExpiryTime = plan.ExpiryTime
 	state.TgID = plan.TgID
 	state.SubID = plan.SubID
 	state.Comment = plan.Comment
 	state.Reset = plan.Reset
+	state.ResetDay = plan.ResetDay
+	state.ResetMax = plan.ResetMax
+	state.TrafficReset = plan.TrafficReset
+	state.TrafficResetDay = plan.TrafficResetDay
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 

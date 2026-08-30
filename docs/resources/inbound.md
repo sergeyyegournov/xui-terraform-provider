@@ -40,12 +40,13 @@ resource "xui_inbound" "example" {
 ### Required
 
 - `port` (Number) Inbound port (must be unique on the server).
-- `protocol` (String) Xray inbound protocol: `vless`, `vmess`, `trojan`, `shadowsocks`, `mixed`, etc. (same as export `protocol`).
+- `protocol` (String) Inbound protocol: `vless`, `vmess`, `trojan`, `shadowsocks`, `hysteria`, `wireguard`, `amneziawg`, `mixed`, etc. (same as export `protocol`).
 - `settings` (String) Protocol-specific `settings` JSON string, same as export `settings` (panel stores escaped JSON; in Terraform use `jsonencode()` on an object). On **create**, use the full object from an export or a minimal valid shape for your protocol (typically `clients = []` when users are managed via `xui_*_client` resources). On **update**, keys other than `clients` are applied; `clients` always come from the server.
 - `stream_settings` (String) `streamSettings` JSON string from export (transport + TLS/REALITY). See Xray [StreamSettingsObject](https://xtls.github.io/config/inbounds.html#streamsettingsobject). Compared with JSON semantic equality, so whitespace and key-order differences between your config and the panel do not show as drift.
 
 ### Optional
 
+- `disable_flow` (Boolean) When true, opt this inbound out of automatic XTLS Vision flow (`disableFlow`).
 - `enable` (Boolean) Whether the inbound is enabled.
 - `expiry_time` (Number) Expiry time in milliseconds since Unix epoch (0 = never); export field `expiryTime`.
 - `listen` (String) Listen address; empty means all interfaces (panel default).
@@ -53,6 +54,7 @@ resource "xui_inbound" "example" {
 - `sniffing` (String) `sniffing` JSON string from export. Compared with JSON semantic equality.
 - `total` (Number) Total traffic limit for the inbound in bytes (0 = unlimited); export `total`.
 - `traffic_reset` (String) Traffic reset schedule (`never`, `daily`, `weekly`, `monthly`, …).
+- `traffic_reset_day` (Number) Day of month for monthly inbound traffic reset (`trafficResetDay`; 1–31).
 
 ### Read-Only
 

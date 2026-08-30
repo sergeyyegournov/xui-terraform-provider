@@ -18,11 +18,13 @@ resource "xui_panel_settings" "this" {
   smtp_from   = "panel@example.com"
   smtp_to     = "admin@example.com"
 
-  sub_enable               = true
-  sub_port                 = 2096
-  sub_path                 = "/my-sub/"
-  sub_json_auto_detect     = true
-  sub_clash_enable_routing = true
+  sub_enable                     = true
+  sub_port                       = 2096
+  sub_path                       = "/my-sub/"
+  sub_json_auto_detect           = true
+  sub_show_identity_on_all_links = true
+  ip_limit_allowlist             = "10.0.0.0/8"
+  sub_clash_enable_routing       = true
 
   restart_panel = true
 }
